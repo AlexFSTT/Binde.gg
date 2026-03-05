@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../config/supabase_config.dart';
 import '../constants/route_paths.dart';
 import '../../features/splash/splash_screen.dart';
 import '../../features/auth/presentation/login_screen.dart';
@@ -21,12 +22,40 @@ class AppRouter {
   static final _rootNavigatorKey = GlobalKey<NavigatorState>();
   static final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
+  /// Routes that don't require authentication.
+  static const _publicRoutes = [
+    Routes.splash,
+    Routes.login,
+    Routes.register,
+  ];
+
   static final GoRouter router = GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: Routes.splash,
-    // TODO: Add redirect logic for auth guard
+
+    // ── Auth redirect guard ───────────────────────────
+    redirect: (context, state) {
+      final isLoggedIn = SupabaseConfig.auth.currentSession != null;
+      final currentPath = state.matchedLocation;
+
+      // On splash, let the splash screen handle its own redirect
+      if (currentPath == Routes.splash) return null;
+
+      // Not logged in → force to login (unless already on a public route)
+      if (!isLoggedIn && !_publicRoutes.contains(currentPath)) {
+        return Routes.login;
+      }
+
+      // Logged in but on auth pages → redirect to dashboard
+      if (isLoggedIn && (currentPath == Routes.login || currentPath == Routes.register)) {
+        return Routes.dashboard;
+      }
+
+      return null; // No redirect needed
+    },
+
     routes: [
-      // ── Auth routes (no shell) ──────────────────────
+      // ── Auth routes (no shell/sidebar) ──────────────
       GoRoute(
         path: Routes.splash,
         builder: (context, state) => const SplashScreen(),
