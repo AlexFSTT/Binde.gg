@@ -40,7 +40,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
 
-    // Check passwords match
     if (_passwordCtrl.text != _confirmPasswordCtrl.text) {
       setState(() => _errorMessage = 'Passwords do not match.');
       return;
@@ -60,8 +59,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!mounted) return;
 
     result.when(
-      success: (_) {
-        context.go(Routes.dashboard);
+      success: (emailPending) {
+        if (emailPending) {
+          // Show confirmation message instead of navigating
+          setState(() => _isLoading = false);
+          _showEmailConfirmation();
+        } else {
+          context.go(Routes.dashboard);
+        }
       },
       failure: (message, code) {
         setState(() {
@@ -69,6 +74,45 @@ class _RegisterScreenState extends State<RegisterScreen> {
           _errorMessage = _friendlyError(message);
         });
       },
+    );
+  }
+
+  void _showEmailConfirmation() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: AppColors.border),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.mark_email_read_rounded,
+                color: AppColors.success, size: 28),
+            const SizedBox(width: 12),
+            Text('Check your email', style: AppTextStyles.h3),
+          ],
+        ),
+        content: Text(
+          'We sent a confirmation link to ${_emailCtrl.text.trim()}.\n\nPlease verify your email, then come back and sign in.',
+          style:
+              AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              context.go(Routes.login);
+            },
+            child: Text(
+              'Go to Sign In',
+              style: AppTextStyles.button.copyWith(color: AppColors.primary),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
