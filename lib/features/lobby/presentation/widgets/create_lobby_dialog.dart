@@ -134,8 +134,9 @@ class _CreateLobbyDialogState extends State<CreateLobbyDialog> {
                   decoration:
                       const InputDecoration(hintText: 'e.g. Pro 5v5 EU'),
                   validator: (v) {
-                    if (v == null || v.trim().isEmpty)
+                    if (v == null || v.trim().isEmpty) {
                       return 'Name is required';
+                    }
                     if (v.trim().length < 2) return 'Min 2 characters';
                     return null;
                   },
@@ -203,8 +204,9 @@ class _CreateLobbyDialogState extends State<CreateLobbyDialog> {
                               final fee = double.tryParse(v);
                               if (fee == null) return 'Invalid';
                               if (fee < 0) return 'Min €0';
-                              if (fee > AppConstants.maxEntryFee)
+                              if (fee > AppConstants.maxEntryFee) {
                                 return 'Max €${AppConstants.maxEntryFee}';
+                              }
                               return null;
                             },
                           ),
