@@ -26,12 +26,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? _error;
 
   /// Resolved user ID — either passed in or current user.
-  String get _resolvedUserId =>
-      widget.userId ?? SupabaseConfig.auth.currentUser!.id;
+  String get _resolvedUserId => (widget.userId == null || widget.userId == 'me')
+      ? SupabaseConfig.auth.currentUser!.id
+      : widget.userId!;
 
-  /// Whether viewing own profile.
   bool get _isOwnProfile =>
       widget.userId == null ||
+      widget.userId == 'me' ||
       widget.userId == SupabaseConfig.auth.currentUser?.id;
 
   @override
@@ -91,7 +92,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 16),
               Text(
                 'Player not found',
-                style: AppTextStyles.h3.copyWith(color: AppColors.textSecondary),
+                style:
+                    AppTextStyles.h3.copyWith(color: AppColors.textSecondary),
               ),
               const SizedBox(height: 8),
               Text(
