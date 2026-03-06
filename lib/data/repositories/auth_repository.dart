@@ -1,7 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../config/supabase_config.dart';
 import '../../core/errors/result.dart';
-import '../models/profile_model.dart';
 
 /// Handles authentication operations.
 class AuthRepository {
