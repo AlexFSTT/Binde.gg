@@ -28,12 +28,19 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
   LobbyModel? _lobby;
   List<_PlayerEntry> _players = [];
   bool _isLoading = true;
+  bool _isStarting = false;
   String? _error;
 
   String get _userId => SupabaseConfig.auth.currentUser!.id;
   bool get _isInLobby => _players.any((p) => p.id == _userId);
   bool get _isCreator => _lobby?.createdBy == _userId;
-  _PlayerEntry? get _myEntry => _players.where((p) => p.id == _userId).firstOrNull;
+  _PlayerEntry? get _myEntry =>
+      _players.where((p) => p.id == _userId).firstOrNull;
+
+  bool get _allReady =>
+      _players.isNotEmpty &&
+      _players.length == (_lobby?.maxPlayers ?? 0) &&
+      _players.every((p) => p.isReady);
 
   @override
   void initState() {
@@ -53,7 +60,6 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
       _error = null;
     });
 
-    // Fetch lobby
     final lobbyResult = await _lobbyRepo.getLobby(widget.lobbyId);
     if (!mounted) return;
 
@@ -65,7 +71,6 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
       return;
     }
 
-    // Fetch players with profile data
     await _loadPlayers();
 
     setState(() {
@@ -73,7 +78,6 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
       _isLoading = false;
     });
 
-    // Subscribe to real-time updates
     _subscribeRealtime();
   }
 
@@ -81,7 +85,8 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
     try {
       final data = await _client
           .from('lobby_players')
-          .select('*, profile:profiles(id, username, elo_rating, steam_avatar_url)')
+          .select(
+              '*, profile:profiles(id, username, elo_rating, steam_avatar_url)')
           .eq('lobby_id', widget.lobbyId);
 
       if (!mounted) return;
@@ -111,9 +116,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
       onPlayerUpdate: (_) => _loadPlayers(),
       onLobbyUpdate: (data) {
         if (!mounted) return;
-        setState(() {
-          _lobby = LobbyModel.fromJson(data);
-        });
+        setState(() => _lobby = LobbyModel.fromJson(data));
       },
     );
   }
@@ -122,7 +125,9 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
     final result = await _lobbyRepo.joinLobby(widget.lobbyId, _userId);
     if (mounted && result.isFailure) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.error ?? 'Failed to join'), backgroundColor: AppColors.danger),
+        SnackBar(
+            content: Text(result.error ?? 'Failed to join'),
+            backgroundColor: AppColors.danger),
       );
     }
   }
@@ -139,12 +144,51 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
     await _lobbyRepo.setReady(widget.lobbyId, _userId, !current);
   }
 
+  /// START MATCH — calls fn_start_match database function
+  Future<void> _startMatch() async {
+    setState(() => _isStarting = true);
+
+    try {
+      final result = await _client.rpc('fn_start_match', params: {
+        'p_lobby_id': widget.lobbyId,
+        'p_started_by': _userId,
+      });
+
+      if (!mounted) return;
+
+      final data = result as Map<String, dynamic>;
+
+      if (data['success'] == true) {
+        final matchId = data['match_id'] as String;
+        context.go('/match/$matchId');
+      } else {
+        setState(() => _isStarting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content:
+                Text(data['message'] ?? data['error'] ?? 'Failed to start'),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isStarting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Error: $e'), backgroundColor: AppColors.danger),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
         backgroundColor: AppColors.bgBase,
-        body: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+        body: Center(
+            child: CircularProgressIndicator(color: AppColors.primary)),
       );
     }
 
@@ -155,11 +199,16 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline_rounded, color: AppColors.danger, size: 48),
+              const Icon(Icons.error_outline_rounded,
+                  color: AppColors.danger, size: 48),
               const SizedBox(height: 16),
-              Text('Lobby not found', style: AppTextStyles.h3.copyWith(color: AppColors.textSecondary)),
+              Text('Lobby not found',
+                  style:
+                      AppTextStyles.h3.copyWith(color: AppColors.textSecondary)),
               const SizedBox(height: 20),
-              ElevatedButton(onPressed: () => context.go('/lobbies'), child: const Text('Back to Lobbies')),
+              ElevatedButton(
+                  onPressed: () => context.go('/lobbies'),
+                  child: const Text('Back to Lobbies')),
             ],
           ),
         ),
@@ -197,29 +246,48 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                           Text(lobby.name, style: AppTextStyles.h2),
                           const SizedBox(width: 12),
                           if (lobby.isPrivate)
-                            const Icon(Icons.lock_rounded, size: 16, color: AppColors.textTertiary),
+                            const Icon(Icons.lock_rounded,
+                                size: 16, color: AppColors.textTertiary),
                           const SizedBox(width: 8),
-                          lobby.isFull ? StatusBadge.full() : StatusBadge.open(),
+                          lobby.isFull
+                              ? StatusBadge.full()
+                              : StatusBadge.open(),
                         ],
                       ),
                       const SizedBox(height: 4),
                       Text(
                         '${lobby.mode} · ${lobby.region} · ELO ${lobby.minElo}-${lobby.maxElo} · ${lobby.entryFee > 0 ? Formatters.currency(lobby.entryFee) : "Free"}',
-                        style: AppTextStyles.bodySmall.copyWith(color: AppColors.textTertiary),
+                        style: AppTextStyles.bodySmall
+                            .copyWith(color: AppColors.textTertiary),
                       ),
                     ],
                   ),
                 ),
 
-                // Action buttons
-                if (_isInLobby) ...[
+                // ── Action Buttons ─────────────────
+                if (_isCreator && _allReady) ...[
+                  // START MATCH button — only for creator when all ready
+                  AppButton(
+                    label: 'START MATCH',
+                    icon: Icons.play_arrow_rounded,
+                    onPressed: _isStarting ? null : _startMatch,
+                    isLoading: _isStarting,
+                  ),
+                  const SizedBox(width: 10),
+                ] else if (_isInLobby) ...[
                   AppButton(
                     label: _myEntry?.isReady == true ? 'UNREADY' : 'READY UP',
-                    variant: _myEntry?.isReady == true ? AppButtonVariant.secondary : AppButtonVariant.primary,
-                    icon: _myEntry?.isReady == true ? Icons.close_rounded : Icons.check_rounded,
+                    variant: _myEntry?.isReady == true
+                        ? AppButtonVariant.secondary
+                        : AppButtonVariant.primary,
+                    icon: _myEntry?.isReady == true
+                        ? Icons.close_rounded
+                        : Icons.check_rounded,
                     onPressed: _toggleReady,
                   ),
                   const SizedBox(width: 10),
+                ],
+                if (_isInLobby) ...[
                   AppButton(
                     label: 'Leave',
                     variant: AppButtonVariant.danger,
@@ -236,13 +304,39 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
               ],
             ),
 
+            // ── "All Ready" banner ─────────────────
+            if (_allReady && !_isCreator && _isInLobby) ...[
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.successMuted,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: AppColors.success.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle_rounded,
+                        color: AppColors.success, size: 20),
+                    const SizedBox(width: 10),
+                    Text(
+                      'All players ready! Waiting for lobby creator to start the match...',
+                      style: AppTextStyles.bodyMedium
+                          .copyWith(color: AppColors.success),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
             const SizedBox(height: 28),
 
             // ── Teams ──────────────────────────────
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Team A
                 Expanded(
                   child: _TeamPanel(
                     teamLabel: 'TEAM A',
@@ -251,8 +345,6 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                     maxSlots: slotsPerTeam,
                   ),
                 ),
-
-                // VS divider
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Column(
@@ -269,14 +361,13 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                         child: Center(
                           child: Text('VS',
                               style: AppTextStyles.label.copyWith(
-                                  color: AppColors.textTertiary, fontSize: 14)),
+                                  color: AppColors.textTertiary,
+                                  fontSize: 14)),
                         ),
                       ),
                     ],
                   ),
                 ),
-
-                // Team B
                 Expanded(
                   child: _TeamPanel(
                     teamLabel: 'TEAM B',
@@ -288,7 +379,6 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
               ],
             ),
 
-            // Unassigned players
             if (unassigned.isNotEmpty) ...[
               const SizedBox(height: 24),
               Container(
@@ -304,12 +394,15 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                   children: [
                     Text('UNASSIGNED',
                         style: AppTextStyles.caption.copyWith(
-                            color: AppColors.textTertiary, letterSpacing: 1.0)),
+                            color: AppColors.textTertiary,
+                            letterSpacing: 1.0)),
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: unassigned.map((p) => _PlayerChip(player: p)).toList(),
+                      children: unassigned
+                          .map((p) => _PlayerChip(player: p))
+                          .toList(),
                     ),
                   ],
                 ),
@@ -317,8 +410,6 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
             ],
 
             const SizedBox(height: 28),
-
-            // ── Lobby Info ─────────────────────────
             _LobbyInfoBar(lobby: lobby, playerCount: _players.length),
           ],
         ),
@@ -327,14 +418,13 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
   }
 }
 
+// ── Supporting Widgets (same as before) ──────────────────────
+
 class _PlayerEntry {
-  final String id;
-  final String username;
+  final String id, username;
   final int elo;
-  final String? avatarUrl;
-  final String? team;
-  final bool isReady;
-  final bool isCaptain;
+  final String? avatarUrl, team;
+  final bool isReady, isCaptain;
 
   const _PlayerEntry({
     required this.id,
@@ -353,12 +443,11 @@ class _TeamPanel extends StatelessWidget {
   final List<_PlayerEntry> players;
   final int maxSlots;
 
-  const _TeamPanel({
-    required this.teamLabel,
-    required this.color,
-    required this.players,
-    required this.maxSlots,
-  });
+  const _TeamPanel(
+      {required this.teamLabel,
+      required this.color,
+      required this.players,
+      required this.maxSlots});
 
   @override
   Widget build(BuildContext context) {
@@ -370,24 +459,21 @@ class _TeamPanel extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Team header
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.06),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(13)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(13)),
             ),
             child: Row(
               children: [
                 Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: color,
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                ),
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                        color: color, borderRadius: BorderRadius.circular(3))),
                 const SizedBox(width: 10),
                 Text(teamLabel,
                     style: AppTextStyles.label.copyWith(
@@ -399,8 +485,6 @@ class _TeamPanel extends StatelessWidget {
               ],
             ),
           ),
-
-          // Player slots
           ...List.generate(maxSlots, (i) {
             if (i < players.length) {
               return _PlayerRow(player: players[i], teamColor: color);
@@ -423,22 +507,20 @@ class _PlayerRow extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppColors.borderSubtle)),
-      ),
+          border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
       child: Row(
         children: [
-          // Ready indicator
           Container(
             width: 8,
             height: 8,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: player.isReady ? AppColors.success : AppColors.textTertiary.withValues(alpha: 0.3),
+              color: player.isReady
+                  ? AppColors.success
+                  : AppColors.textTertiary.withValues(alpha: 0.3),
             ),
           ),
           const SizedBox(width: 12),
-
-          // Avatar
           Container(
             width: 32,
             height: 32,
@@ -446,42 +528,39 @@ class _PlayerRow extends StatelessWidget {
               color: teamColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
               image: player.avatarUrl != null
-                  ? DecorationImage(image: NetworkImage(player.avatarUrl!), fit: BoxFit.cover)
+                  ? DecorationImage(
+                      image: NetworkImage(player.avatarUrl!),
+                      fit: BoxFit.cover)
                   : null,
             ),
             child: player.avatarUrl == null
                 ? Center(
                     child: Text(player.username[0].toUpperCase(),
-                        style: AppTextStyles.label.copyWith(color: teamColor, fontSize: 13)))
+                        style: AppTextStyles.label
+                            .copyWith(color: teamColor, fontSize: 13)))
                 : null,
           ),
           const SizedBox(width: 10),
-
-          // Name
           Expanded(
-            child: Row(
-              children: [
-                Text(player.username,
-                    style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.textPrimary, fontWeight: FontWeight.w500)),
-                if (player.isCaptain) ...[
-                  const SizedBox(width: 6),
-                  const Icon(Icons.star_rounded, size: 14, color: AppColors.warning),
-                ],
+            child: Row(children: [
+              Text(player.username,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w500)),
+              if (player.isCaptain) ...[
+                const SizedBox(width: 6),
+                const Icon(Icons.star_rounded,
+                    size: 14, color: AppColors.warning),
               ],
-            ),
+            ]),
           ),
-
-          // ELO
           EloBadge(elo: player.elo),
-
           const SizedBox(width: 10),
-
-          // Ready text
           Text(
             player.isReady ? 'READY' : 'NOT READY',
             style: AppTextStyles.caption.copyWith(
-              color: player.isReady ? AppColors.success : AppColors.textTertiary,
+              color:
+                  player.isReady ? AppColors.success : AppColors.textTertiary,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -500,33 +579,28 @@ class _EmptySlot extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppColors.borderSubtle)),
-      ),
-      child: Row(
-        children: [
-          Container(
+          border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
+      child: Row(children: [
+        Container(
             width: 8,
             height: 8,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.bgSurfaceActive,
-            ),
+            decoration: const BoxDecoration(
+                shape: BoxShape.circle, color: AppColors.bgSurfaceActive)),
+        const SizedBox(width: 12),
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: AppColors.bgSurfaceActive,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.border),
           ),
-          const SizedBox(width: 12),
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: AppColors.bgSurfaceActive,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.border, style: BorderStyle.solid),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Text('Waiting for player...',
-              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textTertiary)),
-        ],
-      ),
+        ),
+        const SizedBox(width: 10),
+        Text('Waiting for player...',
+            style:
+                AppTextStyles.bodySmall.copyWith(color: AppColors.textTertiary)),
+      ]),
     );
   }
 }
@@ -544,14 +618,13 @@ class _PlayerChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppColors.border),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(player.username, style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
-          const SizedBox(width: 6),
-          EloBadge(elo: player.elo),
-        ],
-      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(player.username,
+            style: AppTextStyles.bodySmall
+                .copyWith(color: AppColors.textSecondary)),
+        const SizedBox(width: 6),
+        EloBadge(elo: player.elo),
+      ]),
     );
   }
 }
@@ -575,10 +648,18 @@ class _LobbyInfoBar extends StatelessWidget {
         children: [
           _InfoItem(label: 'Mode', value: lobby.mode),
           _InfoItem(label: 'Region', value: lobby.region),
-          _InfoItem(label: 'Entry Fee', value: lobby.entryFee > 0 ? Formatters.currency(lobby.entryFee) : 'Free'),
-          _InfoItem(label: 'Players', value: '$playerCount/${lobby.maxPlayers}'),
-          _InfoItem(label: 'ELO Range', value: '${lobby.minElo} - ${lobby.maxElo}'),
-          _InfoItem(label: 'Created', value: Formatters.timeAgo(lobby.createdAt)),
+          _InfoItem(
+              label: 'Entry Fee',
+              value: lobby.entryFee > 0
+                  ? Formatters.currency(lobby.entryFee)
+                  : 'Free'),
+          _InfoItem(
+              label: 'Players', value: '$playerCount/${lobby.maxPlayers}'),
+          _InfoItem(
+              label: 'ELO Range',
+              value: '${lobby.minElo} - ${lobby.maxElo}'),
+          _InfoItem(
+              label: 'Created', value: Formatters.timeAgo(lobby.createdAt)),
         ],
       ),
     );
@@ -586,18 +667,19 @@ class _LobbyInfoBar extends StatelessWidget {
 }
 
 class _InfoItem extends StatelessWidget {
-  final String label;
-  final String value;
+  final String label, value;
   const _InfoItem({required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(label, style: AppTextStyles.caption.copyWith(color: AppColors.textTertiary)),
-        const SizedBox(height: 4),
-        Text(value, style: AppTextStyles.mono.copyWith(fontSize: 13, color: AppColors.textPrimary)),
-      ],
-    );
+    return Column(children: [
+      Text(label,
+          style:
+              AppTextStyles.caption.copyWith(color: AppColors.textTertiary)),
+      const SizedBox(height: 4),
+      Text(value,
+          style: AppTextStyles.mono
+              .copyWith(fontSize: 13, color: AppColors.textPrimary)),
+    ]);
   }
 }

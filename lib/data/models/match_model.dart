@@ -12,6 +12,11 @@ class MatchModel {
   final String? serverIp;
   final int? serverPort;
   final String? serverPassword;
+  final String? dathostServerId;
+  final String? connectString;
+  final String? gotvString;
+  final String? vetoTurnTeam;
+  final DateTime? vetoTurnExpiresAt;
   final int teamAScore;
   final int teamBScore;
   final String? winner;
@@ -39,6 +44,11 @@ class MatchModel {
     this.serverIp,
     this.serverPort,
     this.serverPassword,
+    this.dathostServerId,
+    this.connectString,
+    this.gotvString,
+    this.vetoTurnTeam,
+    this.vetoTurnExpiresAt,
     this.teamAScore = 0,
     this.teamBScore = 0,
     this.winner,
@@ -57,6 +67,8 @@ class MatchModel {
   bool get isLive => status == 'live';
   bool get isFinished => status == 'finished';
   bool get isCancelled => status == 'cancelled';
+  bool get isVeto => status == 'veto';
+  bool get isReadyCheck => status == 'ready_check';
   String get score => '$teamAScore - $teamBScore';
 
   factory MatchModel.fromJson(Map<String, dynamic> json) {
@@ -73,6 +85,13 @@ class MatchModel {
       serverIp: json['server_ip'] as String?,
       serverPort: json['server_port'] as int?,
       serverPassword: json['server_password'] as String?,
+      dathostServerId: json['dathost_server_id'] as String?,
+      connectString: json['connect_string'] as String?,
+      gotvString: json['gotv_string'] as String?,
+      vetoTurnTeam: json['veto_turn_team'] as String?,
+      vetoTurnExpiresAt: json['veto_turn_expires_at'] != null
+          ? DateTime.parse(json['veto_turn_expires_at'])
+          : null,
       teamAScore: json['team_a_score'] as int? ?? 0,
       teamBScore: json['team_b_score'] as int? ?? 0,
       winner: json['winner'] as String?,
