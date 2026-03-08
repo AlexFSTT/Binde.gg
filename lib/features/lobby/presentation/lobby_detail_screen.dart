@@ -114,9 +114,27 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
       onPlayerJoin: (_) => _loadPlayers(),
       onPlayerLeave: (_) => _loadPlayers(),
       onPlayerUpdate: (_) => _loadPlayers(),
-      onLobbyUpdate: (data) {
+      onLobbyUpdate: (data) async {
         if (!mounted) return;
-        setState(() => _lobby = LobbyModel.fromJson(data));
+        final updatedLobby = LobbyModel.fromJson(data);
+        setState(() => _lobby = updatedLobby);
+
+        // If lobby moved to in_match, find the match and redirect
+        if (updatedLobby.status == 'in_match') {
+          try {
+            final matchData = await _client
+                .from('matches')
+                .select('id')
+                .eq('lobby_id', widget.lobbyId)
+                .order('created_at', ascending: false)
+                .limit(1)
+                .single();
+
+            if (mounted) {
+              context.go('/match/${matchData['id']}');
+            }
+          } catch (_) {}
+        }
       },
     );
   }
@@ -187,8 +205,8 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
     if (_isLoading) {
       return const Scaffold(
         backgroundColor: AppColors.bgBase,
-        body: Center(
-            child: CircularProgressIndicator(color: AppColors.primary)),
+        body:
+            Center(child: CircularProgressIndicator(color: AppColors.primary)),
       );
     }
 
@@ -203,8 +221,8 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                   color: AppColors.danger, size: 48),
               const SizedBox(height: 16),
               Text('Lobby not found',
-                  style:
-                      AppTextStyles.h3.copyWith(color: AppColors.textSecondary)),
+                  style: AppTextStyles.h3
+                      .copyWith(color: AppColors.textSecondary)),
               const SizedBox(height: 20),
               ElevatedButton(
                   onPressed: () => context.go('/lobbies'),
@@ -361,8 +379,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                         child: Center(
                           child: Text('VS',
                               style: AppTextStyles.label.copyWith(
-                                  color: AppColors.textTertiary,
-                                  fontSize: 14)),
+                                  color: AppColors.textTertiary, fontSize: 14)),
                         ),
                       ),
                     ],
@@ -394,8 +411,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                   children: [
                     Text('UNASSIGNED',
                         style: AppTextStyles.caption.copyWith(
-                            color: AppColors.textTertiary,
-                            letterSpacing: 1.0)),
+                            color: AppColors.textTertiary, letterSpacing: 1.0)),
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 8,
@@ -480,8 +496,8 @@ class _TeamPanel extends StatelessWidget {
                         color: color, letterSpacing: 1.0, fontSize: 13)),
                 const Spacer(),
                 Text('${players.length}/$maxSlots',
-                    style: AppTextStyles.mono.copyWith(
-                        fontSize: 12, color: AppColors.textTertiary)),
+                    style: AppTextStyles.mono
+                        .copyWith(fontSize: 12, color: AppColors.textTertiary)),
               ],
             ),
           ),
@@ -529,8 +545,7 @@ class _PlayerRow extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               image: player.avatarUrl != null
                   ? DecorationImage(
-                      image: NetworkImage(player.avatarUrl!),
-                      fit: BoxFit.cover)
+                      image: NetworkImage(player.avatarUrl!), fit: BoxFit.cover)
                   : null,
             ),
             child: player.avatarUrl == null
@@ -598,8 +613,8 @@ class _EmptySlot extends StatelessWidget {
         ),
         const SizedBox(width: 10),
         Text('Waiting for player...',
-            style:
-                AppTextStyles.bodySmall.copyWith(color: AppColors.textTertiary)),
+            style: AppTextStyles.bodySmall
+                .copyWith(color: AppColors.textTertiary)),
       ]),
     );
   }
@@ -656,8 +671,7 @@ class _LobbyInfoBar extends StatelessWidget {
           _InfoItem(
               label: 'Players', value: '$playerCount/${lobby.maxPlayers}'),
           _InfoItem(
-              label: 'ELO Range',
-              value: '${lobby.minElo} - ${lobby.maxElo}'),
+              label: 'ELO Range', value: '${lobby.minElo} - ${lobby.maxElo}'),
           _InfoItem(
               label: 'Created', value: Formatters.timeAgo(lobby.createdAt)),
         ],
@@ -674,8 +688,7 @@ class _InfoItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(children: [
       Text(label,
-          style:
-              AppTextStyles.caption.copyWith(color: AppColors.textTertiary)),
+          style: AppTextStyles.caption.copyWith(color: AppColors.textTertiary)),
       const SizedBox(height: 4),
       Text(value,
           style: AppTextStyles.mono
