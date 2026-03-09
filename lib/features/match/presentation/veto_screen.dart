@@ -4,14 +4,13 @@ import '../../../config/supabase_config.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/logger.dart';
+import '../../../services/realtime/realtime_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Map veto screen — alternating bans between Team A and Team B.
-/// This is rendered as a child of MatchScreen.
-/// It does NOT navigate — the parent MatchScreen handles transitions
-/// when the match status changes from 'veto' to 'ready_check'.
+/// FIX #1: Has its own realtime subscriptions for live veto updates.
 class MapVetoScreen extends StatefulWidget {
   final String matchId;
-  /// Called when veto is detected as complete (parent should refresh)
   final VoidCallback? onVetoComplete;
 
   const MapVetoScreen({super.key, required this.matchId, this.onVetoComplete});
@@ -22,6 +21,7 @@ class MapVetoScreen extends StatefulWidget {
 
 class _MapVetoScreenState extends State<MapVetoScreen> {
   final _client = SupabaseConfig.client;
+  final _realtime = RealtimeService();
 
   String? _myTeam;
   String? _currentTurnTeam;
@@ -49,6 +49,7 @@ class _MapVetoScreenState extends State<MapVetoScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _realtime.unsubscribe('veto:${widget.matchId}');
     super.dispose();
   }
 
@@ -77,7 +78,8 @@ class _MapVetoScreenState extends State<MapVetoScreen> {
         _turnExpiry = DateTime.parse(matchData['veto_turn_expires_at']);
       }
 
-      Log.d('Veto state: status=$status, turn=$_currentTurnTeam, map=$_selectedMap');
+      Log.d(
+          'Veto state: status=$status, turn=$_currentTurnTeam, map=$_selectedMap');
 
       // 3. If not in veto anymore, tell parent
       if (status != 'veto') {
@@ -97,14 +99,13 @@ class _MapVetoScreenState extends State<MapVetoScreen> {
           .map((m) => _MapInfo(
                 name: m['name'] as String,
                 displayName: m['display_name'] as String,
-                imageUrl: m['image_url'] as String?,
               ))
           .toList();
 
       // 5. Get existing vetoes
       final vetoData = await _client
           .from('map_vetoes')
-          .select('map_name, team')
+          .select('map_name')
           .eq('match_id', widget.matchId)
           .order('veto_order');
 
@@ -114,12 +115,85 @@ class _MapVetoScreenState extends State<MapVetoScreen> {
 
       setState(() => _isLoading = false);
       _startTimer();
+
+      // 6. Subscribe to realtime — THIS IS THE KEY FIX FOR ISSUE #1
+      _subscribeVetoRealtime();
     } catch (e) {
       Log.e('Veto loadData error', error: e);
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  /// FIX #1: Own realtime subscription so both players see bans live
+  void _subscribeVetoRealtime() {
+    final channelName = 'veto:${widget.matchId}';
+
+    // Use the raw client to create a custom channel for veto
+    _client
+        .channel(channelName)
+        // Listen for new veto inserts
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'map_vetoes',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'match_id',
+            value: widget.matchId,
+          ),
+          callback: (payload) {
+            if (!mounted) return;
+            final mapName = payload.newRecord['map_name'] as String?;
+            Log.d('Realtime veto: $mapName banned');
+            if (mapName != null) {
+              setState(() => _bannedMaps.add(mapName));
+            }
+          },
+        )
+        // Listen for match updates (turn changes, veto complete)
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'matches',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: widget.matchId,
+          ),
+          callback: (payload) {
+            if (!mounted) return;
+            final data = payload.newRecord;
+            final newStatus = data['status'] as String?;
+            final newTurn = data['veto_turn_team'] as String?;
+            final newMap = data['map'] as String?;
+
+            Log.d(
+                'Realtime match update in veto: status=$newStatus, turn=$newTurn, map=$newMap');
+
+            setState(() {
+              if (newTurn != null) _currentTurnTeam = newTurn;
+              if (newMap != null) _selectedMap = newMap;
+
+              if (data['veto_turn_expires_at'] != null) {
+                _turnExpiry = DateTime.parse(data['veto_turn_expires_at']);
+                _startTimer();
+              }
+            });
+
+            // Veto complete — notify parent
+            if (newStatus != null && newStatus != 'veto') {
+              Log.d('Veto complete via realtime! Notifying parent...');
+              Future.delayed(const Duration(seconds: 3), () {
+                if (mounted) widget.onVetoComplete?.call();
+              });
+            }
+          },
+        )
+        .subscribe();
+
+    // Store reference for cleanup
+    _realtime.unsubscribe(channelName); // clear old if any
+    // We manage this channel manually since RealtimeService stores by name
   }
 
   void _startTimer() {
@@ -129,30 +203,9 @@ class _MapVetoScreenState extends State<MapVetoScreen> {
         if (!mounted) return;
         final remaining = _turnExpiry!.difference(DateTime.now()).inSeconds;
         setState(() => _secondsLeft = remaining.clamp(0, 30));
-        if (remaining <= 0) {
-          _timer?.cancel();
-        }
+        if (remaining <= 0) _timer?.cancel();
       });
     }
-  }
-
-  /// Called from parent when realtime updates the veto state
-  void updateVetoState({
-    String? turnTeam,
-    String? selectedMap,
-    DateTime? expiresAt,
-    Set<String>? newBans,
-  }) {
-    if (!mounted) return;
-    setState(() {
-      if (turnTeam != null) _currentTurnTeam = turnTeam;
-      if (selectedMap != null) _selectedMap = selectedMap;
-      if (expiresAt != null) {
-        _turnExpiry = expiresAt;
-        _startTimer();
-      }
-      if (newBans != null) _bannedMaps.addAll(newBans);
-    });
   }
 
   Future<void> _banMap(String mapName) async {
@@ -170,11 +223,10 @@ class _MapVetoScreenState extends State<MapVetoScreen> {
       });
 
       if (!mounted) return;
-
       final data = result as Map<String, dynamic>;
 
       if (data['success'] == true) {
-        Log.d('Veto success: complete=${data['veto_complete']}, remaining=${data['remaining_maps']}');
+        Log.d('Veto success: complete=${data['veto_complete']}');
         setState(() {
           _bannedMaps.add(mapName);
           _isSubmitting = false;
@@ -182,7 +234,6 @@ class _MapVetoScreenState extends State<MapVetoScreen> {
 
         if (data['veto_complete'] == true) {
           setState(() => _selectedMap = data['selected_map'] as String?);
-          // Parent will detect status change via realtime and re-render
         }
       } else {
         Log.e('Veto failed: ${data['error']}');
@@ -190,17 +241,14 @@ class _MapVetoScreenState extends State<MapVetoScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(data['error'] ?? 'Veto failed'),
-              backgroundColor: AppColors.danger,
-            ),
+                content: Text(data['error'] ?? 'Veto failed'),
+                backgroundColor: AppColors.danger),
           );
         }
       }
     } catch (e) {
       Log.e('Veto exception', error: e);
-      if (mounted) {
-        setState(() => _isSubmitting = false);
-      }
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
@@ -208,11 +256,9 @@ class _MapVetoScreenState extends State<MapVetoScreen> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Center(
-        child: CircularProgressIndicator(color: AppColors.primary),
-      );
+          child: CircularProgressIndicator(color: AppColors.primary));
     }
 
-    // Veto complete — show selected map briefly
     if (_selectedMap != null) {
       return _VetoCompleteView(selectedMap: _selectedMap!, maps: _maps);
     }
@@ -235,18 +281,14 @@ class _MapVetoScreenState extends State<MapVetoScreen> {
                   fontWeight: _isMyTurn ? FontWeight.w600 : FontWeight.w400,
                 ),
               ),
-
               const SizedBox(height: 8),
-
-              // Turn indicator + timer
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   _TeamBadge(
-                    label: 'Team A',
-                    color: const Color(0xFF3498DB),
-                    isActive: _currentTurnTeam == 'team_a',
-                  ),
+                      label: 'Team A',
+                      color: const Color(0xFF3498DB),
+                      isActive: _currentTurnTeam == 'team_a'),
                   const SizedBox(width: 16),
                   Container(
                     width: 56,
@@ -257,36 +299,28 @@ class _MapVetoScreenState extends State<MapVetoScreen> {
                           ? AppColors.dangerMuted
                           : AppColors.bgSurfaceActive,
                       border: Border.all(
-                        color: _secondsLeft <= 5
-                            ? AppColors.danger
-                            : AppColors.border,
-                        width: 2,
-                      ),
-                    ),
-                    child: Center(
-                      child: Text(
-                        '$_secondsLeft',
-                        style: AppTextStyles.monoLarge.copyWith(
                           color: _secondsLeft <= 5
                               ? AppColors.danger
-                              : AppColors.textPrimary,
-                          fontSize: 22,
-                        ),
-                      ),
+                              : AppColors.border,
+                          width: 2),
+                    ),
+                    child: Center(
+                      child: Text('$_secondsLeft',
+                          style: AppTextStyles.monoLarge.copyWith(
+                              color: _secondsLeft <= 5
+                                  ? AppColors.danger
+                                  : AppColors.textPrimary,
+                              fontSize: 22)),
                     ),
                   ),
                   const SizedBox(width: 16),
                   _TeamBadge(
-                    label: 'Team B',
-                    color: const Color(0xFFE74C3C),
-                    isActive: _currentTurnTeam == 'team_b',
-                  ),
+                      label: 'Team B',
+                      color: const Color(0xFFE74C3C),
+                      isActive: _currentTurnTeam == 'team_b'),
                 ],
               ),
-
               const SizedBox(height: 32),
-
-              // Map Grid
               Expanded(
                 child: GridView.builder(
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -299,14 +333,11 @@ class _MapVetoScreenState extends State<MapVetoScreen> {
                   itemBuilder: (context, i) {
                     final map = _maps[i];
                     final isBanned = _bannedMaps.contains(map.name);
-                    final canBan = _isMyTurn && !isBanned && !_isSubmitting;
-
                     return _MapCard(
-                      map: map,
-                      isBanned: isBanned,
-                      canBan: canBan,
-                      onBan: () => _banMap(map.name),
-                    );
+                        map: map,
+                        isBanned: isBanned,
+                        canBan: _isMyTurn && !isBanned && !_isSubmitting,
+                        onBan: () => _banMap(map.name));
                   },
                 ),
               ),
@@ -320,35 +351,31 @@ class _MapVetoScreenState extends State<MapVetoScreen> {
 
 class _MapInfo {
   final String name, displayName;
-  final String? imageUrl;
-  const _MapInfo({required this.name, required this.displayName, this.imageUrl});
+  const _MapInfo({required this.name, required this.displayName});
 }
 
 class _MapCard extends StatefulWidget {
   final _MapInfo map;
   final bool isBanned, canBan;
   final VoidCallback onBan;
-
-  const _MapCard({
-    required this.map,
-    required this.isBanned,
-    required this.canBan,
-    required this.onBan,
-  });
-
+  const _MapCard(
+      {required this.map,
+      required this.isBanned,
+      required this.canBan,
+      required this.onBan});
   @override
   State<_MapCard> createState() => _MapCardState();
 }
 
 class _MapCardState extends State<_MapCard> {
   bool _hovered = false;
-
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      cursor: widget.canBan ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      cursor:
+          widget.canBan ? SystemMouseCursors.click : SystemMouseCursors.basic,
       child: GestureDetector(
         onTap: widget.canBan ? widget.onBan : null,
         child: AnimatedContainer(
@@ -369,71 +396,51 @@ class _MapCardState extends State<_MapCard> {
               width: _hovered && widget.canBan ? 2 : 1,
             ),
           ),
-          child: Stack(
-            children: [
-              Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.map_rounded,
-                      size: 28,
+          child: Stack(children: [
+            Center(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.map_rounded,
+                  size: 28,
+                  color: widget.isBanned
+                      ? AppColors.danger.withValues(alpha: 0.4)
+                      : AppColors.textSecondary),
+              const SizedBox(height: 8),
+              Text(widget.map.displayName,
+                  style: AppTextStyles.label.copyWith(
                       color: widget.isBanned
-                          ? AppColors.danger.withValues(alpha: 0.4)
-                          : AppColors.textSecondary,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      widget.map.displayName,
-                      style: AppTextStyles.label.copyWith(
-                        color: widget.isBanned
-                            ? AppColors.danger.withValues(alpha: 0.5)
-                            : AppColors.textPrimary,
-                        fontSize: 15,
-                        decoration: widget.isBanned ? TextDecoration.lineThrough : null,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      widget.map.name,
-                      style: AppTextStyles.caption.copyWith(
-                        color: AppColors.textTertiary,
-                        fontSize: 10,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (widget.isBanned)
-                Positioned.fill(
+                          ? AppColors.danger.withValues(alpha: 0.5)
+                          : AppColors.textPrimary,
+                      fontSize: 15,
+                      decoration:
+                          widget.isBanned ? TextDecoration.lineThrough : null)),
+              const SizedBox(height: 2),
+              Text(widget.map.name,
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textTertiary, fontSize: 10)),
+            ])),
+            if (widget.isBanned)
+              Positioned.fill(
                   child: Center(
-                    child: Icon(
-                      Icons.block_rounded,
-                      size: 48,
-                      color: AppColors.danger.withValues(alpha: 0.25),
-                    ),
-                  ),
-                ),
-              if (_hovered && widget.canBan)
-                Positioned(
+                      child: Icon(Icons.block_rounded,
+                          size: 48,
+                          color: AppColors.danger.withValues(alpha: 0.25)))),
+            if (_hovered && widget.canBan)
+              Positioned(
                   bottom: 8,
                   left: 0,
                   right: 0,
                   child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppColors.danger,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text('BAN',
-                          style: AppTextStyles.caption
-                              .copyWith(color: Colors.white, fontWeight: FontWeight.w700)),
-                    ),
-                  ),
-                ),
-            ],
-          ),
+                      child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                              color: AppColors.danger,
+                              borderRadius: BorderRadius.circular(6)),
+                          child: Text('BAN',
+                              style: AppTextStyles.caption.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700))))),
+          ]),
         ),
       ),
     );
@@ -444,9 +451,8 @@ class _TeamBadge extends StatelessWidget {
   final String label;
   final Color color;
   final bool isActive;
-
-  const _TeamBadge({required this.label, required this.color, required this.isActive});
-
+  const _TeamBadge(
+      {required this.label, required this.color, required this.isActive});
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -455,17 +461,12 @@ class _TeamBadge extends StatelessWidget {
         color: isActive ? color.withValues(alpha: 0.12) : AppColors.bgSurface,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: isActive ? color : AppColors.border,
-          width: isActive ? 2 : 1,
-        ),
+            color: isActive ? color : AppColors.border,
+            width: isActive ? 2 : 1),
       ),
-      child: Text(
-        label,
-        style: AppTextStyles.label.copyWith(
-          color: isActive ? color : AppColors.textTertiary,
-          fontSize: 13,
-        ),
-      ),
+      child: Text(label,
+          style: AppTextStyles.label.copyWith(
+              color: isActive ? color : AppColors.textTertiary, fontSize: 13)),
     );
   }
 }
@@ -473,39 +474,35 @@ class _TeamBadge extends StatelessWidget {
 class _VetoCompleteView extends StatelessWidget {
   final String selectedMap;
   final List<_MapInfo> maps;
-
   const _VetoCompleteView({required this.selectedMap, required this.maps});
-
   @override
   Widget build(BuildContext context) {
     final mapInfo = maps.where((m) => m.name == selectedMap).firstOrNull;
-
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.check_circle_rounded, color: AppColors.success, size: 64),
-          const SizedBox(height: 20),
-          Text('MAP SELECTED',
-              style: AppTextStyles.caption
-                  .copyWith(color: AppColors.textTertiary, letterSpacing: 2, fontSize: 14)),
-          const SizedBox(height: 12),
-          Text(mapInfo?.displayName ?? selectedMap,
-              style: AppTextStyles.h1.copyWith(fontSize: 48)),
-          const SizedBox(height: 8),
-          Text(selectedMap,
-              style: AppTextStyles.mono.copyWith(color: AppColors.textTertiary, fontSize: 16)),
-          const SizedBox(height: 32),
-          Text('Preparing server...',
-              style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textTertiary)),
-          const SizedBox(height: 16),
-          const SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
-          ),
-        ],
-      ),
-    );
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+      const Icon(Icons.check_circle_rounded,
+          color: AppColors.success, size: 64),
+      const SizedBox(height: 20),
+      Text('MAP SELECTED',
+          style: AppTextStyles.caption.copyWith(
+              color: AppColors.textTertiary, letterSpacing: 2, fontSize: 14)),
+      const SizedBox(height: 12),
+      Text(mapInfo?.displayName ?? selectedMap,
+          style: AppTextStyles.h1.copyWith(fontSize: 48)),
+      const SizedBox(height: 8),
+      Text(selectedMap,
+          style: AppTextStyles.mono
+              .copyWith(color: AppColors.textTertiary, fontSize: 16)),
+      const SizedBox(height: 32),
+      Text('Preparing server...',
+          style:
+              AppTextStyles.bodyMedium.copyWith(color: AppColors.textTertiary)),
+      const SizedBox(height: 16),
+      const SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(
+              strokeWidth: 2, color: AppColors.primary)),
+    ]));
   }
 }
