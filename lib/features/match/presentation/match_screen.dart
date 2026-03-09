@@ -29,6 +29,8 @@ class _MatchScreenState extends State<MatchScreen> {
   MatchModel? _match;
   List<_MatchPlayer> _players = [];
   bool _isLoading = true;
+  bool _isProvisioning = false;
+  String? _provisionError;
 
   @override
   void initState() {
@@ -55,6 +57,11 @@ class _MatchScreenState extends State<MatchScreen> {
         _isLoading = false;
       });
       _subscribeRealtime();
+
+      // Auto-trigger server provisioning if veto is done but no server yet
+      if (_match!.status == 'ready_check' && _match!.connectString == null) {
+        _provisionServer();
+      }
     } else {
       setState(() => _isLoading = false);
     }
@@ -96,12 +103,56 @@ class _MatchScreenState extends State<MatchScreen> {
       matchId: widget.matchId,
       onMatchUpdate: (data) {
         if (!mounted) return;
-        setState(() => _match = MatchModel.fromJson(data));
-        // Also reload players for updated stats
+        final updated = MatchModel.fromJson(data);
+        setState(() => _match = updated);
         _loadPlayers();
+
+        // If server just became ready, stop provisioning state
+        if (updated.connectString != null) {
+          setState(() {
+            _isProvisioning = false;
+            _provisionError = null;
+          });
+        }
       },
       onVeto: (_) {},
     );
+  }
+
+  /// Calls the provision-server Edge Function
+  Future<void> _provisionServer() async {
+    if (_isProvisioning) return;
+
+    setState(() {
+      _isProvisioning = true;
+      _provisionError = null;
+    });
+
+    try {
+      final response = await _client.functions.invoke(
+        'provision-server',
+        body: {'match_id': widget.matchId},
+      );
+
+      if (!mounted) return;
+
+      if (response.status != 200) {
+        final errorData = response.data;
+        setState(() {
+          _isProvisioning = false;
+          _provisionError = errorData?['error'] ?? 'Server provisioning failed';
+        });
+      }
+      // On success, the Edge Function updates the match in DB,
+      // which triggers our realtime subscription → UI updates automatically
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isProvisioning = false;
+          _provisionError = 'Failed to provision server: $e';
+        });
+      }
+    }
   }
 
   @override
@@ -134,7 +185,7 @@ class _MatchScreenState extends State<MatchScreen> {
       );
     }
 
-    // Route to veto screen if match is in veto phase
+    // Route to veto screen if in veto phase
     if (_match!.status == 'veto') {
       return MapVetoScreen(matchId: widget.matchId);
     }
@@ -150,7 +201,7 @@ class _MatchScreenState extends State<MatchScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Back + Status Header ───────────────
+            // ── Header ─────────────────────────────
             Row(
               children: [
                 IconButton(
@@ -171,8 +222,7 @@ class _MatchScreenState extends State<MatchScreen> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(m.map!,
-                        style: AppTextStyles.mono.copyWith(
-                            fontSize: 12, color: AppColors.textSecondary)),
+                        style: AppTextStyles.mono.copyWith(fontSize: 12, color: AppColors.textSecondary)),
                   ),
                 ],
                 const Spacer(),
@@ -185,8 +235,20 @@ class _MatchScreenState extends State<MatchScreen> {
 
             const SizedBox(height: 28),
 
-            // ── Connect Info (ready_check status) ──
-            if (m.status == 'ready_check' && m.connectString != null) ...[
+            // ── Server Provisioning State ──────────
+            if (_isProvisioning) ...[
+              _ProvisioningCard(),
+              const SizedBox(height: 28),
+            ] else if (_provisionError != null) ...[
+              _ProvisionErrorCard(
+                error: _provisionError!,
+                onRetry: _provisionServer,
+              ),
+              const SizedBox(height: 28),
+            ],
+
+            // ── Connect Info ───────────────────────
+            if (m.connectString != null && !m.isLive && !m.isFinished) ...[
               _ConnectCard(connectString: m.connectString!),
               const SizedBox(height: 28),
             ],
@@ -196,7 +258,7 @@ class _MatchScreenState extends State<MatchScreen> {
 
             const SizedBox(height: 24),
 
-            // ── Player Stats Table ─────────────────
+            // ── Player Stats Tables ────────────────
             if (_players.isNotEmpty) ...[
               _StatsTable(label: 'TEAM A', color: const Color(0xFF3498DB), players: teamA),
               const SizedBox(height: 16),
@@ -216,7 +278,7 @@ class _MatchScreenState extends State<MatchScreen> {
 
   Widget _matchStatusBadge(String status) => switch (status) {
         'veto' => const StatusBadge(label: 'VETO', color: AppColors.info),
-        'ready_check' => const StatusBadge(label: 'CONNECT', color: AppColors.warning),
+        'ready_check' => const StatusBadge(label: 'SERVER', color: AppColors.warning),
         'live' => StatusBadge.live(),
         'finished' => StatusBadge.finished(),
         'cancelled' => const StatusBadge(label: 'CANCELLED', color: AppColors.textTertiary),
@@ -224,7 +286,122 @@ class _MatchScreenState extends State<MatchScreen> {
       };
 }
 
-// ── Supporting Classes ──────────────────────────────────────
+// ── Provisioning States ─────────────────────────────────
+
+class _ProvisioningCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: [
+          AppColors.primary.withValues(alpha: 0.08),
+          AppColors.bgSurface,
+        ]),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        children: [
+          const SizedBox(
+            width: 40,
+            height: 40,
+            child: CircularProgressIndicator(strokeWidth: 3, color: AppColors.primary),
+          ),
+          const SizedBox(height: 20),
+          Text('Setting up CS2 server...',
+              style: AppTextStyles.h3.copyWith(color: AppColors.textPrimary)),
+          const SizedBox(height: 8),
+          Text('This takes 15-30 seconds. Server is being provisioned with MatchZy.',
+              style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textTertiary),
+              textAlign: TextAlign.center),
+          const SizedBox(height: 16),
+          _LoadingStep(label: 'Cloning server template', isDone: true),
+          _LoadingStep(label: 'Starting CS2 server', isDone: false, isActive: true),
+          _LoadingStep(label: 'Configuring MatchZy plugin', isDone: false),
+          _LoadingStep(label: 'Loading match configuration', isDone: false),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadingStep extends StatelessWidget {
+  final String label;
+  final bool isDone;
+  final bool isActive;
+
+  const _LoadingStep({required this.label, this.isDone = false, this.isActive = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isDone)
+            const Icon(Icons.check_circle_rounded, color: AppColors.success, size: 16)
+          else if (isActive)
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+            )
+          else
+            Icon(Icons.circle_outlined, color: AppColors.textTertiary.withValues(alpha: 0.3), size: 16),
+          const SizedBox(width: 10),
+          Text(label,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: isDone ? AppColors.success : isActive ? AppColors.textPrimary : AppColors.textTertiary,
+              )),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProvisionErrorCard extends StatelessWidget {
+  final String error;
+  final VoidCallback onRetry;
+
+  const _ProvisionErrorCard({required this.error, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppColors.dangerMuted,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        children: [
+          const Icon(Icons.error_outline_rounded, color: AppColors.danger, size: 32),
+          const SizedBox(height: 12),
+          Text('Server provisioning failed',
+              style: AppTextStyles.label.copyWith(color: AppColors.danger)),
+          const SizedBox(height: 8),
+          Text(error,
+              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textTertiary),
+              textAlign: TextAlign.center),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: const Text('Retry'),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Match UI Components ─────────────────────────────────
 
 class _MatchPlayer {
   final String id, username, team;
@@ -233,18 +410,10 @@ class _MatchPlayer {
   final String? avatarUrl;
 
   const _MatchPlayer({
-    required this.id,
-    required this.username,
-    required this.team,
-    required this.elo,
-    this.avatarUrl,
-    this.kills = 0,
-    this.deaths = 0,
-    this.assists = 0,
-    this.adr = 0,
-    this.hltvRating = 0,
-    this.payout = 0,
-    this.eloChange = 0,
+    required this.id, required this.username, required this.team,
+    required this.elo, this.avatarUrl,
+    this.kills = 0, this.deaths = 0, this.assists = 0,
+    this.adr = 0, this.hltvRating = 0, this.payout = 0, this.eloChange = 0,
   });
 }
 
@@ -281,10 +450,8 @@ class _ConnectCard extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SelectableText(
-                  connectString,
-                  style: AppTextStyles.mono.copyWith(fontSize: 14, color: AppColors.textPrimary),
-                ),
+                SelectableText(connectString,
+                    style: AppTextStyles.mono.copyWith(fontSize: 14, color: AppColors.textPrimary)),
                 const SizedBox(width: 12),
                 IconButton(
                   onPressed: () {
@@ -301,10 +468,8 @@ class _ConnectCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          Text(
-            'Open CS2 console (~) and paste the command above',
-            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textTertiary),
-          ),
+          Text('Open CS2 console (~) and paste the command above',
+              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textTertiary)),
         ],
       ),
     );
@@ -327,37 +492,32 @@ class _ScoreHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Team A
           Expanded(
-            child: Column(
-              children: [
-                Text('TEAM A', style: AppTextStyles.caption.copyWith(color: const Color(0xFF3498DB), letterSpacing: 1.0)),
-                const SizedBox(height: 4),
-                Text('${match.teamAScore}', style: AppTextStyles.monoLarge.copyWith(fontSize: 48, color: match.winner == 'team_a' ? AppColors.success : AppColors.textPrimary)),
-              ],
-            ),
+            child: Column(children: [
+              Text('TEAM A', style: AppTextStyles.caption.copyWith(color: const Color(0xFF3498DB), letterSpacing: 1.0)),
+              const SizedBox(height: 4),
+              Text('${match.teamAScore}',
+                  style: AppTextStyles.monoLarge.copyWith(
+                      fontSize: 48,
+                      color: match.winner == 'team_a' ? AppColors.success : AppColors.textPrimary)),
+            ]),
           ),
-
-          // VS / Map
-          Column(
-            children: [
-              Text('VS', style: AppTextStyles.label.copyWith(color: AppColors.textTertiary, fontSize: 16)),
-              if (match.map != null) ...[
-                const SizedBox(height: 4),
-                Text(match.map!, style: AppTextStyles.bodySmall.copyWith(color: AppColors.textTertiary)),
-              ],
+          Column(children: [
+            Text('VS', style: AppTextStyles.label.copyWith(color: AppColors.textTertiary, fontSize: 16)),
+            if (match.map != null) ...[
+              const SizedBox(height: 4),
+              Text(match.map!, style: AppTextStyles.bodySmall.copyWith(color: AppColors.textTertiary)),
             ],
-          ),
-
-          // Team B
+          ]),
           Expanded(
-            child: Column(
-              children: [
-                Text('TEAM B', style: AppTextStyles.caption.copyWith(color: const Color(0xFFE74C3C), letterSpacing: 1.0)),
-                const SizedBox(height: 4),
-                Text('${match.teamBScore}', style: AppTextStyles.monoLarge.copyWith(fontSize: 48, color: match.winner == 'team_b' ? AppColors.success : AppColors.textPrimary)),
-              ],
-            ),
+            child: Column(children: [
+              Text('TEAM B', style: AppTextStyles.caption.copyWith(color: const Color(0xFFE74C3C), letterSpacing: 1.0)),
+              const SizedBox(height: 4),
+              Text('${match.teamBScore}',
+                  style: AppTextStyles.monoLarge.copyWith(
+                      fontSize: 48,
+                      color: match.winner == 'team_b' ? AppColors.success : AppColors.textPrimary)),
+            ]),
           ),
         ],
       ),
@@ -381,7 +541,6 @@ class _StatsTable extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Team header
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
@@ -394,22 +553,22 @@ class _StatsTable extends StatelessWidget {
               Text(label, style: AppTextStyles.label.copyWith(color: color, fontSize: 12, letterSpacing: 1.0)),
             ]),
           ),
-          // Column headers
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             child: Row(children: [
-              const SizedBox(width: 180), // player col
-              ..._statHeaders.map((h) => SizedBox(width: 65, child: Text(h, textAlign: TextAlign.center, style: AppTextStyles.caption.copyWith(color: AppColors.textTertiary, letterSpacing: 0.8)))),
+              const SizedBox(width: 180),
+              ...['K', 'D', 'A', 'ADR', 'HLTV', 'ELO±'].map((h) => SizedBox(
+                    width: 65,
+                    child: Text(h, textAlign: TextAlign.center,
+                        style: AppTextStyles.caption.copyWith(color: AppColors.textTertiary, letterSpacing: 0.8)),
+                  )),
             ]),
           ),
-          // Players
           ...players.map((p) => _PlayerStatRow(player: p, teamColor: color)),
         ],
       ),
     );
   }
-
-  static const _statHeaders = ['K', 'D', 'A', 'ADR', 'HLTV', 'ELO±'];
 }
 
 class _PlayerStatRow extends StatelessWidget {
@@ -423,15 +582,13 @@ class _PlayerStatRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
       child: Row(children: [
-        // Player info
         SizedBox(
           width: 180,
           child: Row(children: [
             Container(
               width: 28, height: 28,
               decoration: BoxDecoration(
-                color: teamColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(7),
+                color: teamColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(7),
                 image: player.avatarUrl != null ? DecorationImage(image: NetworkImage(player.avatarUrl!), fit: BoxFit.cover) : null,
               ),
               child: player.avatarUrl == null
@@ -442,33 +599,21 @@ class _PlayerStatRow extends StatelessWidget {
             Expanded(child: Text(player.username, style: AppTextStyles.bodySmall.copyWith(color: AppColors.textPrimary, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis)),
           ]),
         ),
-        // Stats
-        _statCell('${player.kills}'),
-        _statCell('${player.deaths}'),
-        _statCell('${player.assists}'),
-        _statCell(player.adr.toStringAsFixed(1)),
-        _statCell(player.hltvRating.toStringAsFixed(2), color: _ratingColor(player.hltvRating)),
-        _statCell(
-          player.eloChange != 0 ? Formatters.eloChange(player.eloChange) : '-',
-          color: player.eloChange > 0 ? AppColors.success : player.eloChange < 0 ? AppColors.danger : AppColors.textTertiary,
-        ),
+        _stat('${player.kills}'),
+        _stat('${player.deaths}'),
+        _stat('${player.assists}'),
+        _stat(player.adr.toStringAsFixed(1)),
+        _stat(player.hltvRating.toStringAsFixed(2), color: _rc(player.hltvRating)),
+        _stat(player.eloChange != 0 ? Formatters.eloChange(player.eloChange) : '-',
+            color: player.eloChange > 0 ? AppColors.success : player.eloChange < 0 ? AppColors.danger : AppColors.textTertiary),
       ]),
     );
   }
 
-  Widget _statCell(String value, {Color? color}) {
-    return SizedBox(
-      width: 65,
-      child: Text(value, textAlign: TextAlign.center, style: AppTextStyles.mono.copyWith(fontSize: 12, color: color ?? AppColors.textSecondary)),
-    );
-  }
+  Widget _stat(String v, {Color? color}) =>
+      SizedBox(width: 65, child: Text(v, textAlign: TextAlign.center, style: AppTextStyles.mono.copyWith(fontSize: 12, color: color ?? AppColors.textSecondary)));
 
-  Color _ratingColor(double r) {
-    if (r >= 1.3) return AppColors.success;
-    if (r >= 1.0) return AppColors.textSecondary;
-    if (r >= 0.8) return AppColors.warning;
-    return AppColors.danger;
-  }
+  Color _rc(double r) => r >= 1.3 ? AppColors.success : r >= 1.0 ? AppColors.textSecondary : r >= 0.8 ? AppColors.warning : AppColors.danger;
 }
 
 class _MatchResultCard extends StatelessWidget {
