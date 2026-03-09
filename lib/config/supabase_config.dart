@@ -2,7 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SupabaseConfig {
   // ──────────────────────────────────────────────────────
-  // Replace with your Supabase project credentials
+  // Replace with your Supabase project credentialss
   // ──────────────────────────────────────────────────────
   static const String _supabaseUrl = 'https://pszvntnuehqxxhfecdmc.supabase.co';
   static const String _supabaseAnonKey =
