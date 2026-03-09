@@ -39,6 +39,7 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   riverpod_generator: ^4.0.3
   build_runner: ^2.4.14
+  msix: ^3.16.13
 
 flutter:
   uses-material-design: true
@@ -61,3 +62,13 @@ flutter:
   #         weight: 500
   #       - asset: assets/fonts/JetBrainsMono-Bold.ttf
   #         weight: 700
+
+
+  # MSIX - la root level, NU sub flutter:
+msix_config:
+  display_name: BINDE.GG
+  publisher_display_name: Binde
+  identity_name: com.binde.gg
+  msix_version: 0.1.0.0
+  capabilities: internetClient
+  install_certificate: false
