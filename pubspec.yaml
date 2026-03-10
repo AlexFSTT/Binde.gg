@@ -67,6 +67,7 @@ flutter:
   # MSIX - la root level, NU sub flutter:
 msix_config:
   display_name: BINDE.GG
+  publisher: CN=Binde
   publisher_display_name: Binde
   identity_name: com.binde.gg
   msix_version: 0.1.0.0
