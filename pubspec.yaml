@@ -72,4 +72,4 @@ msix_config:
   identity_name: com.binde.gg
   msix_version: 0.1.0.0
   capabilities: internetClient
-  install_certificate: true
+  install_certificate: false
