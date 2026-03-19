@@ -1,5 +1,8 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../config/supabase_config.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
@@ -10,6 +13,7 @@ import '../../../data/models/profile_model.dart';
 import '../../../data/repositories/profile_repository.dart';
 import '../../../data/repositories/auth_repository.dart';
 import '../../../shared/widgets/glass_card.dart';
+import '../../../services/realtime/realtime_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -21,9 +25,12 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final _profileRepo = ProfileRepository();
   final _authRepo = AuthRepository();
+  final _realtime = RealtimeService();
 
   ProfileModel? _profile;
   bool _isLoading = true;
+  bool _isSteamLinking = false;
+  bool _isRefreshingSteam = false;
 
   String get _userId => SupabaseConfig.auth.currentUser!.id;
 
@@ -31,6 +38,153 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _loadProfile();
+    _subscribeProfileChanges();
+  }
+
+  @override
+  void dispose() {
+    _realtime.unsubscribe('settings:profile');
+    super.dispose();
+  }
+
+  /// Listen for profile updates (Steam link completion via Realtime)
+  void _subscribeProfileChanges() {
+    SupabaseConfig.client
+        .channel('settings:profile')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'profiles',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: _userId,
+          ),
+          callback: (payload) {
+            if (!mounted) return;
+            final newData = payload.newRecord;
+            // If steam_id just appeared, refresh the profile
+            if (newData['steam_id'] != null && _profile?.steamId == null) {
+              _loadProfile();
+              if (mounted) {
+                setState(() => _isSteamLinking = false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Steam account linked successfully!'),
+                    backgroundColor: AppColors.success,
+                  ),
+                );
+              }
+            }
+          },
+        )
+        .subscribe();
+  }
+
+  /// Generate a unique link token for Steam OpenID flow
+  String _generateLinkToken() {
+    final rng = Random.secure();
+    final bytes = List.generate(32, (_) => rng.nextInt(256));
+    return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  }
+
+  /// Initiate Steam linking: save token → open browser
+  Future<void> _linkSteam() async {
+    setState(() => _isSteamLinking = true);
+
+    try {
+      // Generate and save link token
+      final token = _generateLinkToken();
+
+      await SupabaseConfig.client
+          .from('profiles')
+          .update({'steam_link_token': token})
+          .eq('id', _userId);
+
+      // Open browser to Edge Function
+      final steamAuthUrl = Uri.parse(
+        '${SupabaseConfig.client.rest.url.replaceAll('/rest/v1', '')}/functions/v1/steam-auth?token=$token',
+      );
+
+      if (await canLaunchUrl(steamAuthUrl)) {
+        await launchUrl(steamAuthUrl, mode: LaunchMode.externalApplication);
+      } else {
+        throw Exception('Could not open browser');
+      }
+
+      // Show waiting message (Realtime will detect completion)
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Complete the Steam login in your browser. This page will update automatically.'),
+            backgroundColor: AppColors.info,
+            duration: Duration(seconds: 8),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSteamLinking = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to start Steam linking: $e'),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Refresh Steam username/avatar from Steam Web API
+  Future<void> _refreshSteamProfile() async {
+    setState(() => _isRefreshingSteam = true);
+
+    try {
+      final session = SupabaseConfig.auth.currentSession;
+      if (session == null) throw Exception('Not authenticated');
+
+      final response = await SupabaseConfig.client.functions.invoke(
+        'steam-auth',
+        queryParameters: {'action': 'refresh'},
+        method: HttpMethod.post,
+        headers: {'Authorization': 'Bearer ${session.accessToken}'},
+      );
+
+      if (!mounted) return;
+
+      if (response.status == 200) {
+        await _loadProfile();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Steam profile updated!'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+        }
+      } else {
+        final errorMsg = response.data?['error'] ?? 'Failed to refresh';
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(errorMsg.toString()),
+              backgroundColor: AppColors.danger,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Refresh failed: $e'),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isRefreshingSteam = false);
+    }
   }
 
   Future<void> _loadProfile() async {
@@ -134,11 +288,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 if (p.hasSteam) ...[
                   _InfoRow(label: 'Steam ID', value: p.steamId!),
-                  _InfoRow(label: 'Steam Username', value: p.steamUsername ?? 'Unknown'),
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 140,
+                        child: Text('Steam Username',
+                            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textTertiary)),
+                      ),
+                      Expanded(
+                        child: Text(p.steamUsername ?? 'Unknown',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w500,
+                            )),
+                      ),
+                      SizedBox(
+                        width: 32,
+                        height: 32,
+                        child: IconButton(
+                          onPressed: _isRefreshingSteam ? null : _refreshSteamProfile,
+                          padding: EdgeInsets.zero,
+                          icon: _isRefreshingSteam
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppColors.textTertiary,
+                                  ),
+                                )
+                              : const Icon(Icons.refresh_rounded, size: 18),
+                          color: AppColors.textTertiary,
+                          tooltip: 'Refresh from Steam',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
                   _InfoRow(label: 'Status', value: 'LINKED', valueColor: AppColors.success),
                   const SizedBox(height: 8),
                   Text(
-                    'Steam account cannot be unlinked once connected.',
+                    'Changed your Steam name? Hit the refresh icon to update it here.',
                     style: AppTextStyles.caption.copyWith(color: AppColors.textTertiary),
                   ),
                 ] else ...[
@@ -170,16 +360,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         const SizedBox(width: 16),
                         ElevatedButton(
-                          onPressed: () {
-                            // TODO: Implement Steam OpenID flow
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Steam linking will be available soon'),
-                                backgroundColor: AppColors.warning,
-                              ),
-                            );
-                          },
-                          child: const Text('Link Steam'),
+                          onPressed: _isSteamLinking ? null : _linkSteam,
+                          child: _isSteamLinking
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text('Link Steam'),
                         ),
                       ],
                     ),
