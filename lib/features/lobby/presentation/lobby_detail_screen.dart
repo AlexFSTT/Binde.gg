@@ -11,6 +11,7 @@ import '../../../services/realtime/realtime_service.dart';
 import '../../../shared/widgets/status_badge.dart';
 import '../../../shared/widgets/elo_badge.dart';
 import '../../../shared/widgets/app_button.dart';
+import '../../../shared/widgets/glass_card.dart';
 
 class LobbyDetailScreen extends StatefulWidget {
   final String lobbyId;
@@ -239,9 +240,8 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
     final unassigned = _players.where((p) => p.team == null).toList();
     final slotsPerTeam = lobby.maxPlayers ~/ 2;
 
-    return Scaffold(
-      backgroundColor: AppColors.bgBase,
-      body: SingleChildScrollView(
+    return GlassPage(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(28),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

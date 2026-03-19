@@ -8,6 +8,7 @@ import '../../../data/models/lobby_model.dart';
 import '../../../data/repositories/lobby_repository.dart';
 import '../../../shared/widgets/status_badge.dart';
 import 'widgets/create_lobby_dialog.dart';
+import '../../../shared/widgets/glass_card.dart';
 
 class LobbyBrowserScreen extends StatefulWidget {
   const LobbyBrowserScreen({super.key});
@@ -76,9 +77,8 @@ class _LobbyBrowserScreenState extends State<LobbyBrowserScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bgBase,
-      body: Padding(
+    return GlassPage(
+      child: Padding(
         padding: const EdgeInsets.all(28),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

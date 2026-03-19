@@ -9,6 +9,7 @@ import 'widgets/profile_header.dart';
 import 'widgets/profile_stats_grid.dart';
 import 'widgets/elo_chart.dart';
 import 'widgets/profile_match_history.dart';
+import '../../../shared/widgets/glass_card.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? userId;
@@ -112,9 +113,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     }
 
-    return Scaffold(
-      backgroundColor: AppColors.bgBase,
-      body: SingleChildScrollView(
+    return GlassPage(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(28),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

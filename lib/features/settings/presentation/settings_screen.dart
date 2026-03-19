@@ -9,6 +9,7 @@ import '../../../core/errors/result.dart';
 import '../../../data/models/profile_model.dart';
 import '../../../data/repositories/profile_repository.dart';
 import '../../../data/repositories/auth_repository.dart';
+import '../../../shared/widgets/glass_card.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -95,9 +96,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     final p = _profile!;
 
-    return Scaffold(
-      backgroundColor: AppColors.bgBase,
-      body: SingleChildScrollView(
+    return GlassPage(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(28),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

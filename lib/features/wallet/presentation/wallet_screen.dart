@@ -8,6 +8,7 @@ import '../../../data/repositories/wallet_repository.dart';
 import 'widgets/balance_overview.dart';
 import 'widgets/wallet_actions.dart';
 import 'widgets/transaction_history.dart';
+import '../../../shared/widgets/glass_card.dart';
 
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
@@ -92,9 +93,8 @@ class _WalletScreenState extends State<WalletScreen> {
       );
     }
 
-    return Scaffold(
-      backgroundColor: AppColors.bgBase,
-      body: SingleChildScrollView(
+    return GlassPage(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(28),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

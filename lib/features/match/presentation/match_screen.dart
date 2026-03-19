@@ -12,6 +12,7 @@ import '../../../data/repositories/match_repository.dart';
 import '../../../services/realtime/realtime_service.dart';
 import '../../../shared/widgets/status_badge.dart';
 import 'veto_screen.dart';
+import '../../../shared/widgets/glass_card.dart';
 
 class MatchScreen extends StatefulWidget {
   final String matchId;
@@ -268,9 +269,8 @@ class _MatchScreenState extends State<MatchScreen> {
     final teamA = _players.where((p) => p.team == 'team_a').toList();
     final teamB = _players.where((p) => p.team == 'team_b').toList();
 
-    return Scaffold(
-      backgroundColor: AppColors.bgBase,
-      body: SingleChildScrollView(
+    return GlassPage(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(28),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

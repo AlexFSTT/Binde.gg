@@ -13,6 +13,7 @@ import 'widgets/quick_actions.dart';
 import 'widgets/recent_matches_section.dart';
 import 'widgets/active_lobbies_section.dart';
 import 'widgets/steam_link_banner.dart';
+import '../../../shared/widgets/glass_card.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -114,9 +115,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
 
-    return Scaffold(
-      backgroundColor: AppColors.bgBase,
-      body: RefreshIndicator(
+    return GlassPage(
+      child: RefreshIndicator(
         onRefresh: _loadDashboardData,
         color: AppColors.primary,
         child: SingleChildScrollView(
