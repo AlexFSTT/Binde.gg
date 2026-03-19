@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/constants/route_paths.dart';
+import '../../../lobby/presentation/widgets/create_lobby_dialog.dart';
 
 /// Quick action buttons row on dashboard.
 class QuickActions extends StatelessWidget {
@@ -30,16 +31,20 @@ class QuickActions extends StatelessWidget {
               icon: Icons.play_arrow_rounded,
               label: 'Find Match',
               color: AppColors.primary,
-              onTap: () {
-                // TODO: Open matchmaking / quick queue
-              },
+              onTap: () => context.go(Routes.play),
             ),
             _ActionButton(
               icon: Icons.add_rounded,
               label: 'Create Lobby',
               color: AppColors.accent,
-              onTap: () {
-                // TODO: Open create lobby dialog
+              onTap: () async {
+                final created = await showDialog<dynamic>(
+                  context: context,
+                  builder: (_) => const CreateLobbyDialog(),
+                );
+                if (created != null && context.mounted) {
+                  context.go('/lobby/${created.id}');
+                }
               },
             ),
             _ActionButton(

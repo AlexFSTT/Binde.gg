@@ -76,6 +76,153 @@ class _LoginScreenState extends State<LoginScreen> {
     return 'Something went wrong. Please try again.';
   }
 
+  void _handleForgotPassword() {
+    final resetEmailCtrl = TextEditingController(text: _emailCtrl.text);
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        bool sending = false;
+        String? message;
+        bool success = false;
+
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              backgroundColor: AppColors.bgSurface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: const BorderSide(color: AppColors.border),
+              ),
+              title: Row(
+                children: [
+                  Icon(
+                    success ? Icons.check_circle_rounded : Icons.lock_reset_rounded,
+                    color: success ? AppColors.success : AppColors.primary,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    success ? 'Email sent' : 'Reset password',
+                    style: AppTextStyles.h3,
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (success) ...[
+                    Text(
+                      'We sent a password reset link to ${resetEmailCtrl.text.trim()}.\n\nCheck your inbox and follow the link to set a new password.',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ] else ...[
+                    Text(
+                      'Enter your email address and we\'ll send you a link to reset your password.',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textTertiary,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: resetEmailCtrl,
+                      keyboardType: TextInputType.emailAddress,
+                      style: AppTextStyles.bodyMedium,
+                      decoration: const InputDecoration(
+                        hintText: 'your@email.com',
+                        prefixIcon: Icon(Icons.email_outlined,
+                            size: 20, color: AppColors.textTertiary),
+                      ),
+                    ),
+                    if (message != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        message!,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.danger,
+                        ),
+                      ),
+                    ],
+                  ],
+                ],
+              ),
+              actions: [
+                if (success)
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: Text(
+                      'Done',
+                      style: AppTextStyles.button.copyWith(color: AppColors.primary),
+                    ),
+                  )
+                else ...[
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: Text(
+                      'Cancel',
+                      style: AppTextStyles.button.copyWith(
+                        color: AppColors.textTertiary,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: sending
+                        ? null
+                        : () async {
+                            final email = resetEmailCtrl.text.trim();
+                            if (email.isEmpty || !email.contains('@')) {
+                              setDialogState(() =>
+                                  message = 'Please enter a valid email.');
+                              return;
+                            }
+
+                            setDialogState(() {
+                              sending = true;
+                              message = null;
+                            });
+
+                            try {
+                              await _authRepo.resetPassword(email: email);
+                              setDialogState(() {
+                                sending = false;
+                                success = true;
+                              });
+                            } catch (e) {
+                              setDialogState(() {
+                                sending = false;
+                                message =
+                                    'Failed to send reset email. Please try again.';
+                              });
+                            }
+                          },
+                    child: sending
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.primary,
+                            ),
+                          )
+                        : Text(
+                            'Send reset link',
+                            style: AppTextStyles.button.copyWith(
+                              color: AppColors.primary,
+                            ),
+                          ),
+                  ),
+                ],
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -184,9 +331,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           Align(
                             alignment: Alignment.centerRight,
                             child: TextButton(
-                              onPressed: () {
-                                // TODO: Implement password reset
-                              },
+                              onPressed: _handleForgotPassword,
                               style: TextButton.styleFrom(
                                 foregroundColor: AppColors.textTertiary,
                                 padding: EdgeInsets.zero,
