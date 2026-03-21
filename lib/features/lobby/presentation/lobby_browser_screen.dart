@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../../config/supabase_config.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/formatters.dart';
@@ -22,7 +23,10 @@ class _LobbyBrowserScreenState extends State<LobbyBrowserScreen> {
   final _lobbyRepo = LobbyRepository();
 
   List<LobbyModel> _lobbies = [];
+  List<LobbyModel> _activeLobbies = [];
+  List<LobbyModel> _pastLobbies = [];
   bool _isLoading = true;
+  bool _showPast = false;
 
   // Filters
   String? _modeFilter;
@@ -31,10 +35,31 @@ class _LobbyBrowserScreenState extends State<LobbyBrowserScreen> {
   static const _modes = ['All', '1v1', '2v2', '5v5'];
   static const _regions = ['All', 'EU', 'NA', 'SA', 'AS', 'OC'];
 
+  String get _userId => SupabaseConfig.auth.currentUser!.id;
+
   @override
   void initState() {
     super.initState();
-    _loadLobbies();
+    _loadAll();
+  }
+
+  Future<void> _loadAll() async {
+    await Future.wait([
+      _loadLobbies(),
+      _loadMyLobbies(),
+    ]);
+  }
+
+  Future<void> _loadMyLobbies() async {
+    final activeResult = await _lobbyRepo.getMyActiveLobbies(_userId);
+    final pastResult = await _lobbyRepo.getMyPastLobbies(_userId);
+
+    if (!mounted) return;
+
+    setState(() {
+      if (activeResult.isSuccess) _activeLobbies = activeResult.data ?? [];
+      if (pastResult.isSuccess) _pastLobbies = pastResult.data ?? [];
+    });
   }
 
   Future<void> _loadLobbies() async {
@@ -67,11 +92,28 @@ class _LobbyBrowserScreenState extends State<LobbyBrowserScreen> {
   }
 
   void _openCreateDialog() async {
+    // Block if already in active lobby
+    if (_activeLobbies.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('You are already in an active lobby ("${_activeLobbies.first.name}"). Leave it first.'),
+          backgroundColor: AppColors.warning,
+          action: SnackBarAction(
+            label: 'Go to lobby',
+            textColor: AppColors.bgBase,
+            onPressed: () => context.go('/lobby/${_activeLobbies.first.id}'),
+          ),
+        ),
+      );
+      return;
+    }
+
     final created = await showBounceDialog<LobbyModel>(
       context: context,
       builder: (_) => const CreateLobbyDialog(),
     );
     if (created != null && mounted) {
+      _loadMyLobbies(); // Refresh active lobbies
       context.go('/lobby/${created.id}');
     }
   }
@@ -110,6 +152,78 @@ class _LobbyBrowserScreenState extends State<LobbyBrowserScreen> {
             ),
 
             const SizedBox(height: 24),
+
+            // ── Your Active Lobbies ─────────────────
+            if (_activeLobbies.isNotEmpty) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.accent.withValues(alpha: 0.2)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.play_circle_rounded, size: 18, color: AppColors.accent),
+                        const SizedBox(width: 8),
+                        Text('Your Active Lobbies',
+                            style: AppTextStyles.label.copyWith(
+                                color: AppColors.accent, fontSize: 13)),
+                        const Spacer(),
+                        Text('${_activeLobbies.length} active',
+                            style: AppTextStyles.caption.copyWith(
+                                color: AppColors.accent)),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    ..._activeLobbies.map((lobby) => _ActiveLobbyCard(
+                          lobby: lobby,
+                          onTap: () => context.go('/lobby/${lobby.id}'),
+                        )),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // ── Past Lobbies toggle ─────────────────
+            if (_pastLobbies.isNotEmpty) ...[
+              MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: () => setState(() => _showPast = !_showPast),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _showPast ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                        size: 18,
+                        color: AppColors.textTertiary,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Past Lobbies (${_pastLobbies.length})',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.textTertiary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (_showPast) ...[
+                const SizedBox(height: 8),
+                ..._pastLobbies.map((lobby) => _PastLobbyRow(
+                      lobby: lobby,
+                      onTap: () => context.go('/lobby/${lobby.id}'),
+                    )),
+              ],
+              const SizedBox(height: 16),
+            ],
 
             // ── Filters ────────────────────────────
             Row(
@@ -419,6 +533,167 @@ class _ChipState extends State<_Chip> {
                     : AppColors.textSecondary,
                 fontWeight: widget.isActive ? FontWeight.w600 : FontWeight.w400,
               )),
+        ),
+      ),
+    );
+  }
+}
+
+/// Highlighted card for an active lobby the user is in.
+class _ActiveLobbyCard extends StatefulWidget {
+  final LobbyModel lobby;
+  final VoidCallback onTap;
+  const _ActiveLobbyCard({required this.lobby, required this.onTap});
+
+  @override
+  State<_ActiveLobbyCard> createState() => _ActiveLobbyCardState();
+}
+
+class _ActiveLobbyCardState extends State<_ActiveLobbyCard> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = widget.lobby;
+    final isLive = l.status == 'in_match';
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          margin: const EdgeInsets.only(top: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: _hovered
+                ? AppColors.accent.withValues(alpha: 0.10)
+                : AppColors.bgSurface.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: _hovered
+                  ? AppColors.accent.withValues(alpha: 0.3)
+                  : AppColors.border,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isLive ? AppColors.danger : AppColors.success,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.bgSurfaceActive,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(l.mode,
+                    style: AppTextStyles.mono.copyWith(
+                        fontSize: 11, fontWeight: FontWeight.w700)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(l.name,
+                        style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.w500),
+                        overflow: TextOverflow.ellipsis),
+                    Text(
+                      '${l.region} · ${l.currentPlayers}/${l.maxPlayers} players',
+                      style: AppTextStyles.caption
+                          .copyWith(color: AppColors.textTertiary),
+                    ),
+                  ],
+                ),
+              ),
+              if (isLive) StatusBadge.live() else const StatusBadge(label: 'Open', color: AppColors.success),
+              const SizedBox(width: 12),
+              Icon(Icons.arrow_forward_ios_rounded,
+                  size: 14,
+                  color: _hovered ? AppColors.accent : AppColors.textTertiary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact row for a past lobby.
+class _PastLobbyRow extends StatefulWidget {
+  final LobbyModel lobby;
+  final VoidCallback onTap;
+  const _PastLobbyRow({required this.lobby, required this.onTap});
+
+  @override
+  State<_PastLobbyRow> createState() => _PastLobbyRowState();
+}
+
+class _PastLobbyRowState extends State<_PastLobbyRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = widget.lobby;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          margin: const EdgeInsets.only(bottom: 4),
+          decoration: BoxDecoration(
+            color: _hovered ? AppColors.bgSurfaceHover : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.bgSurfaceActive,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(l.mode,
+                    style: AppTextStyles.mono.copyWith(
+                        fontSize: 10, color: AppColors.textTertiary)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(l.name,
+                    style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textSecondary),
+                    overflow: TextOverflow.ellipsis),
+              ),
+              Text(
+                l.status == 'finished' ? 'Finished' : 'Cancelled',
+                style: AppTextStyles.caption.copyWith(
+                  color: l.status == 'finished'
+                      ? AppColors.textTertiary
+                      : AppColors.danger,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                Formatters.timeAgo(l.createdAt),
+                style: AppTextStyles.caption
+                    .copyWith(color: AppColors.textTertiary),
+              ),
+            ],
+          ),
         ),
       ),
     );

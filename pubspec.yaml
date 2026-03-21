@@ -51,6 +51,7 @@ flutter:
   
   assets:
     - assets/sounds/
+    - assets/maps/
   # TODO: Add fonts after downloading
   # fonts:
   #   - family: Inter

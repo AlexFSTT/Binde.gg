@@ -9,12 +9,13 @@ class EloBadge extends StatelessWidget {
 
   Color get _color {
     if (elo >= 2500) return const Color(0xFFE74C3C); // Legendary
-    if (elo >= 2000) return const Color(0xFFF39C12); // Master
-    if (elo >= 1500) return const Color(0xFF9B59B6); // Diamond
-    if (elo >= 1200) return const Color(0xFF3498DB); // Platinum
-    if (elo >= 1000) return AppColors.success; // Gold
-    if (elo >= 800) return AppColors.textSecondary; // Silver
-    return AppColors.textTertiary; // Bronze
+    if (elo >= 1800) return const Color(0xFFF39C12); // Master
+    if (elo >= 1200) return const Color(0xFF9B59B6); // Diamond
+    if (elo >= 800) return const Color(0xFF3498DB);  // Platinum
+    if (elo >= 600) return AppColors.success;         // Gold
+    if (elo >= 400) return AppColors.info;            // Silver
+    if (elo >= 200) return AppColors.textSecondary;   // Bronze
+    return AppColors.textTertiary;                     // Iron (new players)
   }
 
   @override

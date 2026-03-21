@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../config/supabase_config.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/constants/map_assets.dart';
 import '../../../core/utils/logger.dart';
 import '../../../services/realtime/realtime_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -369,8 +370,11 @@ class _MapCard extends StatefulWidget {
 
 class _MapCardState extends State<_MapCard> {
   bool _hovered = false;
+
   @override
   Widget build(BuildContext context) {
+    final imagePath = MapAssets.getImagePath(widget.map.name);
+
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -380,66 +384,162 @@ class _MapCardState extends State<_MapCard> {
         onTap: widget.canBan ? widget.onBan : null,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            color: widget.isBanned
-                ? AppColors.dangerMuted
-                : _hovered && widget.canBan
-                    ? AppColors.danger.withValues(alpha: 0.08)
-                    : AppColors.bgSurface,
+            color: AppColors.bgSurface,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: widget.isBanned
-                  ? AppColors.danger.withValues(alpha: 0.3)
+                  ? AppColors.danger.withValues(alpha: 0.4)
                   : _hovered && widget.canBan
-                      ? AppColors.danger.withValues(alpha: 0.4)
+                      ? AppColors.danger.withValues(alpha: 0.5)
                       : AppColors.border,
               width: _hovered && widget.canBan ? 2 : 1,
             ),
           ),
           child: Stack(children: [
-            Center(
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.map_rounded,
-                  size: 28,
-                  color: widget.isBanned
-                      ? AppColors.danger.withValues(alpha: 0.4)
-                      : AppColors.textSecondary),
-              const SizedBox(height: 8),
-              Text(widget.map.displayName,
-                  style: AppTextStyles.label.copyWith(
-                      color: widget.isBanned
-                          ? AppColors.danger.withValues(alpha: 0.5)
-                          : AppColors.textPrimary,
-                      fontSize: 15,
-                      decoration:
-                          widget.isBanned ? TextDecoration.lineThrough : null)),
-              const SizedBox(height: 2),
-              Text(widget.map.name,
-                  style: AppTextStyles.caption
-                      .copyWith(color: AppColors.textTertiary, fontSize: 10)),
-            ])),
+            // ── Background image ──────────────────
+            if (imagePath != null)
+              Positioned.fill(
+                child: Image.asset(
+                  imagePath,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                ),
+              )
+            else
+              Positioned.fill(
+                child: Container(
+                  color: AppColors.bgSurface,
+                  child: Center(
+                    child: Icon(Icons.map_rounded,
+                        size: 32, color: AppColors.textTertiary.withValues(alpha: 0.3)),
+                  ),
+                ),
+              ),
+
+            // ── Dark gradient overlay for readability ──
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.15),
+                      Colors.black.withValues(alpha: 0.75),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            // ── Banned overlay ────────────────────
             if (widget.isBanned)
               Positioned.fill(
+                child: Container(
+                  color: AppColors.dangerMuted.withValues(alpha: 0.85),
                   child: Center(
-                      child: Icon(Icons.block_rounded,
-                          size: 48,
-                          color: AppColors.danger.withValues(alpha: 0.25)))),
-            if (_hovered && widget.canBan)
+                    child: Icon(Icons.block_rounded,
+                        size: 48,
+                        color: AppColors.danger.withValues(alpha: 0.35)),
+                  ),
+                ),
+              ),
+
+            // ── Hover glow (ban target) ───────────
+            if (_hovered && widget.canBan && !widget.isBanned)
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                        color: AppColors.danger.withValues(alpha: 0.0)),
+                    color: AppColors.danger.withValues(alpha: 0.08),
+                  ),
+                ),
+              ),
+
+            // ── Map name (bottom) ─────────────────
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      widget.map.displayName,
+                      style: AppTextStyles.label.copyWith(
+                        color: widget.isBanned
+                            ? AppColors.danger.withValues(alpha: 0.5)
+                            : Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        decoration: widget.isBanned
+                            ? TextDecoration.lineThrough
+                            : null,
+                        shadows: widget.isBanned
+                            ? null
+                            : [
+                                Shadow(
+                                  color: Colors.black.withValues(alpha: 0.6),
+                                  blurRadius: 4,
+                                ),
+                              ],
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.map.name,
+                      style: AppTextStyles.caption.copyWith(
+                        color: widget.isBanned
+                            ? AppColors.textTertiary.withValues(alpha: 0.4)
+                            : Colors.white.withValues(alpha: 0.6),
+                        fontSize: 10,
+                        shadows: widget.isBanned
+                            ? null
+                            : [
+                                Shadow(
+                                  color: Colors.black.withValues(alpha: 0.6),
+                                  blurRadius: 4,
+                                ),
+                              ],
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ── BAN button on hover ───────────────
+            if (_hovered && widget.canBan && !widget.isBanned)
               Positioned(
-                  bottom: 8,
-                  left: 0,
-                  right: 0,
-                  child: Center(
-                      child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 4),
-                          decoration: BoxDecoration(
-                              color: AppColors.danger,
-                              borderRadius: BorderRadius.circular(6)),
-                          child: Text('BAN',
-                              style: AppTextStyles.caption.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700))))),
+                top: 8,
+                right: 8,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.danger,
+                    borderRadius: BorderRadius.circular(6),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.danger.withValues(alpha: 0.4),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: Text('BAN',
+                      style: AppTextStyles.caption.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11)),
+                ),
+              ),
           ]),
         ),
       ),

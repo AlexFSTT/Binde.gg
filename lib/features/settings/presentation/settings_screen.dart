@@ -326,6 +326,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: 6),
                   _InfoRow(label: 'Status', value: 'LINKED', valueColor: AppColors.success),
+                  if (p.vacBanned) ...[
+                    const SizedBox(height: 6),
+                    _InfoRow(
+                      label: 'VAC Status',
+                      value: 'VAC BAN (${p.vacBanCount})',
+                      valueColor: AppColors.danger,
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 6),
+                    _InfoRow(label: 'VAC Status', value: 'CLEAN', valueColor: AppColors.success),
+                  ],
                   const SizedBox(height: 8),
                   Text(
                     'Changed your Steam name? Hit the refresh icon to update it here.',

@@ -8,8 +8,8 @@ class AppConstants {
   static const String appVersion = '0.1.0';
 
   // ── ELO ─────────────────────────────────────────────
-  static const int defaultElo = 1000;
-  static const int minElo = 100;
+  static const int defaultElo = 100;
+  static const int minElo = 0;
   static const int maxElo = 5000;
 
   // ── Financials ──────────────────────────────────────

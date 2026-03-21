@@ -8,6 +8,8 @@ class ProfileModel {
   final String? steamUsername;
   final String? steamAvatarUrl;
   final String? steamProfileUrl;
+  final bool vacBanned;
+  final int vacBanCount;
   final String role;
   final String kycStatus;
   final bool isBanned;
@@ -36,13 +38,15 @@ class ProfileModel {
     this.steamUsername,
     this.steamAvatarUrl,
     this.steamProfileUrl,
+    this.vacBanned = false,
+    this.vacBanCount = 0,
     this.role = 'player',
     this.kycStatus = 'none',
     this.isBanned = false,
     this.banReason,
     this.bannedUntil,
-    this.eloRating = 1000,
-    this.eloPeak = 1000,
+    this.eloRating = 100,
+    this.eloPeak = 100,
     this.matchesPlayed = 0,
     this.matchesWon = 0,
     this.matchesLost = 0,
@@ -73,13 +77,15 @@ class ProfileModel {
       steamUsername: json['steam_username'] as String?,
       steamAvatarUrl: json['steam_avatar_url'] as String?,
       steamProfileUrl: json['steam_profile_url'] as String?,
+      vacBanned: json['vac_banned'] as bool? ?? false,
+      vacBanCount: json['vac_ban_count'] as int? ?? 0,
       role: json['role'] as String? ?? 'player',
       kycStatus: json['kyc_status'] as String? ?? 'none',
       isBanned: json['is_banned'] as bool? ?? false,
       banReason: json['ban_reason'] as String?,
       bannedUntil: json['banned_until'] != null ? DateTime.parse(json['banned_until']) : null,
-      eloRating: json['elo_rating'] as int? ?? 1000,
-      eloPeak: json['elo_peak'] as int? ?? 1000,
+      eloRating: json['elo_rating'] as int? ?? 100,
+      eloPeak: json['elo_peak'] as int? ?? 100,
       matchesPlayed: json['matches_played'] as int? ?? 0,
       matchesWon: json['matches_won'] as int? ?? 0,
       matchesLost: json['matches_lost'] as int? ?? 0,

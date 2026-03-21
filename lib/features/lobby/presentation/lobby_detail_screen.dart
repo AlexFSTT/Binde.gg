@@ -98,7 +98,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
           return _PlayerEntry(
             id: profile['id'] as String,
             username: profile['username'] as String,
-            elo: profile['elo_rating'] as int? ?? 1000,
+            elo: profile['elo_rating'] as int? ?? 100,
             avatarUrl: profile['steam_avatar_url'] as String?,
             team: row['team'] as String?,
             isReady: row['is_ready'] as bool? ?? false,
