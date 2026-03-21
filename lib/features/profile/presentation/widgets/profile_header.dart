@@ -77,6 +77,53 @@ class ProfileHeader extends StatelessWidget {
                           ? AppColors.textSecondary
                           : AppColors.textTertiary,
                     ),
+
+                    // VAC status (only shown when Steam is linked)
+                    if (profile.hasSteam) ...[
+                      const SizedBox(width: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: profile.vacBanned
+                              ? AppColors.danger.withValues(alpha: 0.12)
+                              : AppColors.success.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: profile.vacBanned
+                                ? AppColors.danger.withValues(alpha: 0.3)
+                                : AppColors.success.withValues(alpha: 0.25),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              profile.vacBanned
+                                  ? Icons.gpp_bad_rounded
+                                  : Icons.verified_user_rounded,
+                              size: 12,
+                              color: profile.vacBanned
+                                  ? AppColors.danger
+                                  : AppColors.success,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              profile.vacBanned
+                                  ? 'VAC BAN'
+                                  : 'VAC CLEAN',
+                              style: AppTextStyles.caption.copyWith(
+                                color: profile.vacBanned
+                                    ? AppColors.danger
+                                    : AppColors.success,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(width: 20),
 
                     // Region

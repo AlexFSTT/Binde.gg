@@ -142,8 +142,8 @@ class _MatchScreenState extends State<MatchScreen> {
             kills: row['kills'] as int? ?? 0,
             deaths: row['deaths'] as int? ?? 0,
             assists: row['assists'] as int? ?? 0,
+            headshots: row['headshots'] as int? ?? 0,
             adr: (row['adr'] as num?)?.toDouble() ?? 0,
-            hltvRating: (row['hltv_rating'] as num?)?.toDouble() ?? 0,
             payout: (row['payout'] as num?)?.toDouble() ?? 0,
             eloChange: row['elo_change'] as int? ?? 0,
           );
@@ -393,8 +393,8 @@ class _MatchScreenState extends State<MatchScreen> {
 
 class _MatchPlayer {
   final String id, username, team;
-  final int elo, kills, deaths, assists, eloChange;
-  final double adr, hltvRating, payout;
+  final int elo, kills, deaths, assists, headshots, eloChange;
+  final double adr, payout;
   final String? avatarUrl;
   const _MatchPlayer(
       {required this.id,
@@ -405,10 +405,13 @@ class _MatchPlayer {
       this.kills = 0,
       this.deaths = 0,
       this.assists = 0,
+      this.headshots = 0,
       this.adr = 0,
-      this.hltvRating = 0,
       this.payout = 0,
       this.eloChange = 0});
+
+  double get kd => deaths == 0 ? kills.toDouble() : kills / deaths;
+  double get hsRate => kills == 0 ? 0 : headshots / kills * 100;
 }
 
 class _ProvisioningCard extends StatelessWidget {
@@ -656,12 +659,14 @@ class _StatsTable extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             child: Row(children: [
               const SizedBox(width: 180),
-              ...['K', 'D', 'A', 'ADR', 'HLTV', 'ELO±'].map((h) => SizedBox(
-                  width: 65,
-                  child: Text(h,
-                      textAlign: TextAlign.center,
-                      style: AppTextStyles.caption.copyWith(
-                          color: AppColors.textTertiary, letterSpacing: 0.8))))
+              ...['K', 'D', 'A', 'ADR', 'K/D', 'HS%', 'ELO±'].map((h) =>
+                  SizedBox(
+                      width: 58,
+                      child: Text(h,
+                          textAlign: TextAlign.center,
+                          style: AppTextStyles.caption.copyWith(
+                              color: AppColors.textTertiary,
+                              letterSpacing: 0.8))))
             ])),
         ...players.map((p) => _PlayerStatRow(player: p, teamColor: color)),
       ]),
@@ -713,7 +718,8 @@ class _PlayerStatRow extends StatelessWidget {
         _s('${player.deaths}'),
         _s('${player.assists}'),
         _s(player.adr.toStringAsFixed(1)),
-        _s(player.hltvRating.toStringAsFixed(2), c: _rc(player.hltvRating)),
+        _s(player.kd.toStringAsFixed(2), c: _rkd(player.kd)),
+        _s('${player.hsRate.toStringAsFixed(0)}%'),
         _s(player.eloChange != 0 ? Formatters.eloChange(player.eloChange) : '-',
             c: player.eloChange > 0
                 ? AppColors.success
@@ -725,16 +731,16 @@ class _PlayerStatRow extends StatelessWidget {
   }
 
   Widget _s(String v, {Color? c}) => SizedBox(
-      width: 65,
+      width: 58,
       child: Text(v,
           textAlign: TextAlign.center,
           style: AppTextStyles.mono
               .copyWith(fontSize: 12, color: c ?? AppColors.textSecondary)));
-  Color _rc(double r) => r >= 1.3
+  Color _rkd(double kd) => kd >= 1.5
       ? AppColors.success
-      : r >= 1.0
+      : kd >= 1.0
           ? AppColors.textSecondary
-          : r >= 0.8
+          : kd >= 0.7
               ? AppColors.warning
               : AppColors.danger;
 }

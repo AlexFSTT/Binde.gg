@@ -55,7 +55,7 @@ class _ProfileMatchHistoryState extends State<ProfileMatchHistory> {
           deaths: row['deaths'] as int? ?? 0,
           assists: row['assists'] as int? ?? 0,
           adr: (row['adr'] as num?)?.toDouble() ?? 0.0,
-          hltvRating: (row['hltv_rating'] as num?)?.toDouble() ?? 0.0,
+          headshots: row['headshots'] as int? ?? 0,
           payout: (row['payout'] as num?)?.toDouble() ?? 0.0,
           eloChange: row['elo_change'] as int? ?? 0,
         );
@@ -144,7 +144,14 @@ class _ProfileMatchHistoryState extends State<ProfileMatchHistory> {
                   ),
                   SizedBox(
                     width: 50,
-                    child: Text('HLTV',
+                    child: Text('K/D',
+                        style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textTertiary,
+                            letterSpacing: 0.8)),
+                  ),
+                  SizedBox(
+                    width: 50,
+                    child: Text('HS%',
                         style: AppTextStyles.caption.copyWith(
                             color: AppColors.textTertiary,
                             letterSpacing: 0.8)),
@@ -233,8 +240,8 @@ class _ProfileMatchHistoryState extends State<ProfileMatchHistory> {
 class _MatchEntry {
   final MatchModel match;
   final String team;
-  final int kills, deaths, assists;
-  final double adr, hltvRating, payout;
+  final int kills, deaths, assists, headshots;
+  final double adr, payout;
   final int eloChange;
 
   _MatchEntry({
@@ -243,12 +250,14 @@ class _MatchEntry {
     required this.kills,
     required this.deaths,
     required this.assists,
+    required this.headshots,
     required this.adr,
-    required this.hltvRating,
     required this.payout,
     required this.eloChange,
   });
 
+  double get kd => deaths == 0 ? kills.toDouble() : kills / deaths;
+  double get hsRate => kills == 0 ? 0 : headshots / kills * 100;
   bool get isWin => match.winner == team;
   bool get isLoss => match.winner != null && !isWin;
 }
@@ -355,14 +364,30 @@ class _MatchRow extends StatelessWidget {
             ),
           ),
 
-          // HLTV Rating
+          // K/D Ratio
           SizedBox(
             width: 50,
             child: Text(
-              entry.hltvRating.toStringAsFixed(2),
+              entry.kd.toStringAsFixed(2),
               style: AppTextStyles.mono.copyWith(
                 fontSize: 12,
-                color: _ratingColor(entry.hltvRating),
+                color: entry.kd >= 1.5
+                    ? AppColors.success
+                    : entry.kd >= 1.0
+                        ? AppColors.textSecondary
+                        : AppColors.warning,
+              ),
+            ),
+          ),
+
+          // HS%
+          SizedBox(
+            width: 50,
+            child: Text(
+              '${entry.hsRate.toStringAsFixed(0)}%',
+              style: AppTextStyles.mono.copyWith(
+                fontSize: 12,
+                color: AppColors.textTertiary,
               ),
             ),
           ),
@@ -389,12 +414,5 @@ class _MatchRow extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  Color _ratingColor(double rating) {
-    if (rating >= 1.3) return AppColors.success;
-    if (rating >= 1.0) return AppColors.textSecondary;
-    if (rating >= 0.8) return AppColors.warning;
-    return AppColors.danger;
   }
 }
