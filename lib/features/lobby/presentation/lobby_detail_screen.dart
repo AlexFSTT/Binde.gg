@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../config/supabase_config.dart';
@@ -31,6 +32,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
   bool _isLoading = true;
   bool _isStarting = false;
   String? _error;
+  Timer? _refreshTimer;
 
   String get _userId => SupabaseConfig.auth.currentUser!.id;
   bool get _isInLobby => _players.any((p) => p.id == _userId);
@@ -43,14 +45,24 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
       _players.length == (_lobby?.maxPlayers ?? 0) &&
       _players.every((p) => p.isReady);
 
+  /// Lock leave/unready once match is starting or lobby is in_match
+  bool get _isMatchLocked =>
+      _isStarting || _lobby?.status == 'in_match';
+
   @override
   void initState() {
     super.initState();
     _loadLobby();
+    // Fallback: refresh every 5 seconds if realtime drops
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => _silentRefresh(),
+    );
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _realtime.unsubscribe('lobby:${widget.lobbyId}');
     super.dispose();
   }
@@ -80,6 +92,38 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
     });
 
     _subscribeRealtime();
+  }
+
+  /// Silent refresh — updates data without loading state.
+  /// Runs every 5s as fallback if realtime drops.
+  Future<void> _silentRefresh() async {
+    if (_isLoading || !mounted) return;
+    try {
+      final lobbyResult = await _lobbyRepo.getLobby(widget.lobbyId);
+      if (!mounted || lobbyResult.isFailure) return;
+
+      final updatedLobby = lobbyResult.data;
+      if (updatedLobby != null) {
+        setState(() => _lobby = updatedLobby);
+
+        // Auto-redirect if lobby moved to in_match
+        if (updatedLobby.status == 'in_match') {
+          final matchData = await _client
+              .from('matches')
+              .select('id')
+              .eq('lobby_id', widget.lobbyId)
+              .order('created_at', ascending: false)
+              .limit(1)
+              .maybeSingle();
+          if (mounted && matchData != null) {
+            context.go('/match/${matchData['id']}');
+            return;
+          }
+        }
+      }
+
+      await _loadPlayers();
+    } catch (_) {}
   }
 
   Future<void> _loadPlayers() async {
@@ -301,7 +345,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                     icon: _myEntry?.isReady == true
                         ? Icons.close_rounded
                         : Icons.check_rounded,
-                    onPressed: _toggleReady,
+                    onPressed: _isMatchLocked ? null : _toggleReady,
                   ),
                   const SizedBox(width: 10),
                 ],
@@ -310,7 +354,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                     label: 'Leave',
                     variant: AppButtonVariant.danger,
                     icon: Icons.logout_rounded,
-                    onPressed: _leaveLobby,
+                    onPressed: _isMatchLocked ? null : _leaveLobby,
                   ),
                 ] else if (lobby.isOpen && !lobby.isFull) ...[
                   AppButton(

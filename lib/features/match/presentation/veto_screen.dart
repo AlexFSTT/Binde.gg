@@ -199,14 +199,37 @@ class _MapVetoScreenState extends State<MapVetoScreen> {
 
   void _startTimer() {
     _timer?.cancel();
+    // Start from DB expiry if available, otherwise start fresh 30s
     if (_turnExpiry != null) {
-      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (!mounted) return;
+      final remaining = _turnExpiry!.difference(DateTime.now()).inSeconds;
+      _secondsLeft = remaining.clamp(0, 30);
+    } else {
+      _secondsLeft = 30;
+    }
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (_turnExpiry != null) {
         final remaining = _turnExpiry!.difference(DateTime.now()).inSeconds;
         setState(() => _secondsLeft = remaining.clamp(0, 30));
-        if (remaining <= 0) _timer?.cancel();
-      });
-    }
+      } else {
+        setState(() => _secondsLeft = (_secondsLeft - 1).clamp(0, 30));
+      }
+      if (_secondsLeft <= 0) {
+        _timer?.cancel();
+        _autoBanRandom();
+      }
+    });
+  }
+
+  /// Auto-ban a random available map when timer expires on my turn.
+  void _autoBanRandom() {
+    if (!_isMyTurn || _isSubmitting) return;
+    final available = _maps
+        .where((m) => !_bannedMaps.contains(m.name))
+        .toList();
+    if (available.isEmpty) return;
+    available.shuffle();
+    _banMap(available.first.name);
   }
 
   Future<void> _banMap(String mapName) async {

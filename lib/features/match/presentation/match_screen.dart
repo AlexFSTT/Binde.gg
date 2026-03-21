@@ -435,7 +435,7 @@ class _ProvisioningCard extends StatelessWidget {
         Text('Setting up CS2 server...',
             style: AppTextStyles.h3.copyWith(color: AppColors.textPrimary)),
         const SizedBox(height: 8),
-        Text('This takes 15-30 seconds. Server powerd by Hetzner.',
+        Text('This takes 15-30 seconds. Server powered by Hetzner.',
             style: AppTextStyles.bodyMedium
                 .copyWith(color: AppColors.textTertiary),
             textAlign: TextAlign.center),

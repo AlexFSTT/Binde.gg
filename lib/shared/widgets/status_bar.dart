@@ -95,7 +95,7 @@ class _StatusBarState extends State<StatusBar> {
       final serversRes = await client
           .from('matches')
           .select('id')
-          .eq('status', 'live');
+          .inFilter('status', ['veto', 'ready_check', 'live']);
       if (mounted) setState(() => _serversOnline = (serversRes as List).length);
     } catch (_) {}
   }
