@@ -10,6 +10,7 @@ import '../../../core/errors/result.dart';
 import '../../../data/models/match_model.dart';
 import '../../../data/repositories/match_repository.dart';
 import '../../../services/realtime/realtime_service.dart';
+import '../../../services/sound/sound_service.dart';
 import '../../../shared/widgets/status_badge.dart';
 import 'veto_screen.dart';
 import '../../../shared/widgets/glass_card.dart';
@@ -160,6 +161,7 @@ class _MatchScreenState extends State<MatchScreen> {
 
         final updated = MatchModel.fromJson(data);
         final oldStatus = _match?.status;
+        final oldConnectString = _match?.connectString;
 
         Log.d('Realtime: $oldStatus → ${updated.status}, connect: ${updated.connectString}');
 
@@ -173,6 +175,13 @@ class _MatchScreenState extends State<MatchScreen> {
             _isProvisioning = false;
             _provisionError = null;
           });
+        }
+
+        // Play match ready sound when server is ready (1v1 and 2v2 only)
+        if (updated.connectString != null &&
+            oldConnectString == null &&
+            (updated.mode == '1v1' || updated.mode == '2v2')) {
+          SoundService.playMatchReady();
         }
 
         // Veto just completed → only creator provisions

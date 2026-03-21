@@ -195,56 +195,145 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
   }
 }
 
-class _ProfilePopup extends StatelessWidget {
+class _ProfilePopup extends StatefulWidget {
   final Offset anchorPosition; final Size anchorSize;
   final VoidCallback onDismiss; final void Function(String) onNavigate; final VoidCallback onLogout;
   const _ProfilePopup({required this.anchorPosition, required this.anchorSize, required this.onDismiss, required this.onNavigate, required this.onLogout});
 
   @override
+  State<_ProfilePopup> createState() => _ProfilePopupState();
+}
+
+class _ProfilePopupState extends State<_ProfilePopup>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+  late final Animation<double> _fade;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
+    );
+    _scale = Tween(begin: 0.7, end: 1.0).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.elasticOut),
+    );
+    _fade = Tween(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _ctrl, curve: const Interval(0.0, 0.4, curve: Curves.easeOut)),
+    );
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     const w = 180.0;
-    return Stack(children: [
-      Positioned.fill(child: GestureDetector(onTap: onDismiss, behavior: HitTestBehavior.opaque, child: const ColoredBox(color: Colors.transparent))),
-      Positioned(
-        left: anchorPosition.dx + anchorSize.width / 2 - w / 2,
-        bottom: MediaQuery.of(context).size.height - anchorPosition.dy + 12,
-        child: Material(color: Colors.transparent, child: Container(width: w,
-          decoration: BoxDecoration(color: AppColors.bgElevated, borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.border.withValues(alpha: 0.6), width: 0.5),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 20, offset: const Offset(0, -4))]),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const SizedBox(height: 4),
-            _PopupMenuItem(icon: Icons.person_rounded, label: 'Profile', onTap: () => onNavigate('/profile/me')),
-            _PopupMenuItem(icon: Icons.settings_rounded, label: 'Settings', onTap: () => onNavigate('/settings')),
-            _PopupMenuItem(icon: Icons.account_balance_wallet_rounded, label: 'Wallet', onTap: () => onNavigate('/wallet')),
-            Padding(padding: const EdgeInsets.symmetric(horizontal: 10), child: Divider(height: 1, color: AppColors.border.withValues(alpha: 0.4))),
-            _PopupMenuItem(icon: Icons.logout_rounded, label: 'Logout', isDanger: true, onTap: onLogout),
-            const SizedBox(height: 4),
-          ])))),
-    ]);
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, child) => Stack(children: [
+        Positioned.fill(child: GestureDetector(onTap: widget.onDismiss, behavior: HitTestBehavior.translucent, child: const SizedBox.expand())),
+        Positioned(
+          left: widget.anchorPosition.dx + widget.anchorSize.width / 2 - w / 2,
+          bottom: MediaQuery.of(context).size.height - widget.anchorPosition.dy + 12,
+          child: FadeTransition(
+            opacity: _fade,
+            child: ScaleTransition(
+              scale: _scale,
+              alignment: Alignment.bottomCenter,
+              child: Material(
+                color: Colors.transparent,
+                child: Container(width: w,
+                  decoration: BoxDecoration(color: AppColors.bgElevated, borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.border.withValues(alpha: 0.6), width: 0.5),
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 20, offset: const Offset(0, -4))]),
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const SizedBox(height: 4),
+                    _PopupMenuItem(icon: Icons.person_rounded, label: 'Profile', onTap: () => widget.onNavigate('/profile/me')),
+                    _PopupMenuItem(icon: Icons.settings_rounded, label: 'Settings', onTap: () => widget.onNavigate('/settings')),
+                    _PopupMenuItem(icon: Icons.account_balance_wallet_rounded, label: 'Wallet', onTap: () => widget.onNavigate('/wallet')),
+                    Padding(padding: const EdgeInsets.symmetric(horizontal: 10), child: Divider(height: 1, color: AppColors.border.withValues(alpha: 0.4))),
+                    _PopupMenuItem(icon: Icons.logout_rounded, label: 'Logout', isDanger: true, onTap: widget.onLogout),
+                    const SizedBox(height: 4),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ]),
+    );
   }
 }
 
-class _PopupMenuItem extends StatefulWidget {
+class _PopupMenuItem extends StatelessWidget {
   final IconData icon; final String label; final VoidCallback onTap; final bool isDanger;
   const _PopupMenuItem({required this.icon, required this.label, required this.onTap, this.isDanger = false});
-  @override State<_PopupMenuItem> createState() => _PopupMenuItemState();
-}
 
-class _PopupMenuItemState extends State<_PopupMenuItem> {
-  bool _h = false;
   @override
   Widget build(BuildContext context) {
-    final c = widget.isDanger ? AppColors.danger : AppColors.textPrimary;
+    final defaultColor = isDanger ? AppColors.danger : AppColors.textPrimary;
+    final hoverBg = isDanger
+        ? AppColors.dangerMuted
+        : AppColors.accent.withValues(alpha: 0.10);
+    final hoverFg = isDanger ? AppColors.danger : AppColors.accent;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          hoverColor: hoverBg,
+          splashColor: isDanger
+              ? AppColors.danger.withValues(alpha: 0.15)
+              : AppColors.accent.withValues(alpha: 0.15),
+          child: _HoverBuilder(
+            builder: (isHovered) {
+              final color = isHovered ? hoverFg : defaultColor;
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Row(children: [
+                  Icon(icon, size: 18, color: color),
+                  const SizedBox(width: 10),
+                  Text(label, style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w500)),
+                ]),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Lightweight hover detection — changes icon/text color without managing state manually.
+class _HoverBuilder extends StatefulWidget {
+  final Widget Function(bool isHovered) builder;
+  const _HoverBuilder({required this.builder});
+
+  @override
+  State<_HoverBuilder> createState() => _HoverBuilderState();
+}
+
+class _HoverBuilderState extends State<_HoverBuilder> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
     return MouseRegion(
-      onEnter: (_) => setState(() => _h = true), onExit: (_) => setState(() => _h = false),
-      child: GestureDetector(onTap: widget.onTap,
-        child: AnimatedContainer(duration: const Duration(milliseconds: 120),
-          margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(8),
-            color: _h ? (widget.isDanger ? AppColors.dangerMuted : AppColors.bgSurfaceHover) : Colors.transparent),
-          child: Row(children: [Icon(widget.icon, size: 18, color: c), const SizedBox(width: 10),
-            Text(widget.label, style: TextStyle(color: c, fontSize: 13, fontWeight: FontWeight.w500))]))));
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: widget.builder(_hovered),
+    );
   }
 }

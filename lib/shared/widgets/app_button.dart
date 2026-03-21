@@ -26,7 +26,7 @@ class AppButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (bg, fg) = switch (variant) {
-      AppButtonVariant.primary => (AppColors.primary, AppColors.textPrimary),
+      AppButtonVariant.primary => (AppColors.primary, AppColors.bgBase),
       AppButtonVariant.secondary => (AppColors.bgSurfaceActive, AppColors.textPrimary),
       AppButtonVariant.danger => (AppColors.danger, AppColors.textPrimary),
       AppButtonVariant.ghost => (Colors.transparent, AppColors.textSecondary),

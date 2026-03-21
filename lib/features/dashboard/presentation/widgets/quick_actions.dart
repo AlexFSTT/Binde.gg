@@ -4,6 +4,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/constants/route_paths.dart';
 import '../../../lobby/presentation/widgets/create_lobby_dialog.dart';
+import '../../../../shared/widgets/bounce_dialog.dart';
 
 /// Quick action buttons row on dashboard.
 class QuickActions extends StatelessWidget {
@@ -38,7 +39,7 @@ class QuickActions extends StatelessWidget {
               label: 'Create Lobby',
               color: AppColors.accent,
               onTap: () async {
-                final created = await showDialog<dynamic>(
+                final created = await showBounceDialog<dynamic>(
                   context: context,
                   builder: (_) => const CreateLobbyDialog(),
                 );

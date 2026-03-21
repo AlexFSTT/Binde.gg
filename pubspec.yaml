@@ -33,6 +33,11 @@ dependencies:
   # ── Windows Desktop ──────────────────────────────
   window_manager: ^0.5.1
 
+  # ── Audio ────────────────────────────────────────
+  audioplayers: ^6.1.0
+
+
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -43,7 +48,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-
+  
+  assets:
+    - assets/sounds/
   # TODO: Add fonts after downloading
   # fonts:
   #   - family: Inter

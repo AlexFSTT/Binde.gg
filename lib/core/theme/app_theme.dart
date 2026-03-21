@@ -18,7 +18,7 @@ class AppTheme {
         secondary: AppColors.accent,
         surface: AppColors.bgSurface,
         error: AppColors.danger,
-        onPrimary: AppColors.textPrimary,
+        onPrimary: AppColors.bgBase,
         onSecondary: AppColors.bgBase,
         onSurface: AppColors.textPrimary,
         onError: AppColors.textPrimary,
@@ -47,7 +47,7 @@ class AppTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
-          foregroundColor: AppColors.textPrimary,
+          foregroundColor: AppColors.bgBase,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),

@@ -20,7 +20,7 @@ class DashboardHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        // Avatar
+        // Avatar (shows Steam avatar if linked, otherwise first letter)
         Container(
           width: 52,
           height: 52,
@@ -30,15 +30,23 @@ class DashboardHeader extends StatelessWidget {
             border: Border.all(
               color: AppColors.primary.withValues(alpha: 0.3),
             ),
+            image: profile.steamAvatarUrl != null
+                ? DecorationImage(
+                    image: NetworkImage(profile.steamAvatarUrl!),
+                    fit: BoxFit.cover,
+                  )
+                : null,
           ),
-          child: Center(
-            child: Text(
-              profile.username.isNotEmpty
-                  ? profile.username[0].toUpperCase()
-                  : '?',
-              style: AppTextStyles.h2.copyWith(color: AppColors.primary),
-            ),
-          ),
+          child: profile.steamAvatarUrl == null
+              ? Center(
+                  child: Text(
+                    profile.username.isNotEmpty
+                        ? profile.username[0].toUpperCase()
+                        : '?',
+                    style: AppTextStyles.h2.copyWith(color: AppColors.primary),
+                  ),
+                )
+              : null,
         ),
         const SizedBox(width: 16),
 

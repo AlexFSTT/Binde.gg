@@ -8,6 +8,7 @@ import '../../../data/models/lobby_model.dart';
 import '../../../data/repositories/lobby_repository.dart';
 import '../../../shared/widgets/status_badge.dart';
 import 'widgets/create_lobby_dialog.dart';
+import '../../../shared/widgets/bounce_dialog.dart';
 import '../../../shared/widgets/glass_card.dart';
 
 class LobbyBrowserScreen extends StatefulWidget {
@@ -66,7 +67,7 @@ class _LobbyBrowserScreenState extends State<LobbyBrowserScreen> {
   }
 
   void _openCreateDialog() async {
-    final created = await showDialog<LobbyModel>(
+    final created = await showBounceDialog<LobbyModel>(
       context: context,
       builder: (_) => const CreateLobbyDialog(),
     );
