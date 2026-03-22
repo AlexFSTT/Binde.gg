@@ -6,9 +6,7 @@ import '../../../core/errors/result.dart';
 import '../../../data/models/profile_model.dart';
 import '../../../data/repositories/profile_repository.dart';
 import 'widgets/profile_header.dart';
-import 'widgets/profile_stats_grid.dart';
-import 'widgets/elo_chart.dart';
-import 'widgets/profile_match_history.dart';
+import 'widgets/recent_performance.dart';
 import '../../../shared/widgets/glass_card.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -127,40 +125,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 28),
 
-            // ── Stats Grid ─────────────────────────
-            ProfileStatsGrid(profile: _profile!),
-
-            const SizedBox(height: 28),
-
-            // ── ELO Chart + Match History ──────────
-            LayoutBuilder(
-              builder: (context, constraints) {
-                if (constraints.maxWidth >= 800) {
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        flex: 3,
-                        child: EloChart(playerId: _profile!.id),
-                      ),
-                      const SizedBox(width: 20),
-                      Expanded(
-                        flex: 4,
-                        child: ProfileMatchHistory(
-                          playerId: _profile!.id,
-                        ),
-                      ),
-                    ],
-                  );
-                }
-                return Column(
-                  children: [
-                    EloChart(playerId: _profile!.id),
-                    const SizedBox(height: 20),
-                    ProfileMatchHistory(playerId: _profile!.id),
-                  ],
-                );
-              },
+            // ── Recent Performance (FACEIT-style) ──
+            RecentPerformance(
+              playerId: _profile!.id,
+              currentElo: _profile!.eloRating,
+              eloPeak: _profile!.eloPeak,
+              bestWinStreak: _profile!.bestWinStreak,
             ),
           ],
         ),

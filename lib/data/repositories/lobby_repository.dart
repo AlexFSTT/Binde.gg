@@ -67,7 +67,7 @@ class LobbyRepository {
           .from('lobbies')
           .select()
           .inFilter('id', lobbyIds)
-          .inFilter('status', ['finished', 'cancelled'])
+          .inFilter('status', ['finished', 'cancelled', 'closed'])
           .order('created_at', ascending: false)
           .limit(limit);
 
