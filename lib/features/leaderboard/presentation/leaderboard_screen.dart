@@ -6,7 +6,7 @@ import '../../../core/utils/formatters.dart';
 import '../../../core/errors/result.dart';
 import '../../../data/models/profile_model.dart';
 import '../../../data/repositories/profile_repository.dart';
-import '../../../shared/widgets/elo_badge.dart';
+import '../../../shared/widgets/level_badge.dart';
 import '../../../shared/widgets/glass_card.dart';
 
 class LeaderboardScreen extends StatefulWidget {
@@ -312,7 +312,7 @@ class _PlayerRowState extends State<_PlayerRow> {
               ),
 
               // ELO
-              SizedBox(width: 80, child: EloBadge(elo: p.eloRating)),
+              SizedBox(width: 80, child: LevelBadge.compact(elo: p.eloRating)),
 
               // Matches
               SizedBox(

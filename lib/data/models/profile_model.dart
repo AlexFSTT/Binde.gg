@@ -10,6 +10,16 @@ class ProfileModel {
   final String? steamProfileUrl;
   final bool vacBanned;
   final int vacBanCount;
+  final String? firstName;
+  final String? lastName;
+  final DateTime? birthDate;
+  final String? country;
+  final String? bio;
+  final String language;
+  final String? twitchUrl;
+  final String? youtubeUrl;
+  final String? facebookUrl;
+  final String? twitterUrl;
   final String role;
   final String kycStatus;
   final bool isBanned;
@@ -22,6 +32,7 @@ class ProfileModel {
   final int matchesLost;
   final int winStreak;
   final int bestWinStreak;
+  final int prestige;
   final double totalEarnings;
   final String preferredRegion;
   final String preferredMode;
@@ -40,6 +51,16 @@ class ProfileModel {
     this.steamProfileUrl,
     this.vacBanned = false,
     this.vacBanCount = 0,
+    this.firstName,
+    this.lastName,
+    this.birthDate,
+    this.country,
+    this.bio,
+    this.language = 'en',
+    this.twitchUrl,
+    this.youtubeUrl,
+    this.facebookUrl,
+    this.twitterUrl,
     this.role = 'player',
     this.kycStatus = 'none',
     this.isBanned = false,
@@ -52,6 +73,7 @@ class ProfileModel {
     this.matchesLost = 0,
     this.winStreak = 0,
     this.bestWinStreak = 0,
+    this.prestige = 0,
     this.totalEarnings = 0.0,
     this.preferredRegion = 'EU',
     this.preferredMode = '5v5',
@@ -65,6 +87,12 @@ class ProfileModel {
   bool get isModerator => role == 'moderator';
   bool get isStaff => isAdmin || isModerator;
   bool get isKycVerified => kycStatus == 'verified';
+
+  /// Level (1-50) based on ELO. Each level = 300 ELO.
+  int get level => (eloRating ~/ 300 + 1).clamp(1, 50);
+  int get levelProgress => eloRating % 300;
+  int get levelEloMin => (level - 1) * 300;
+  int get levelEloMax => level * 300;
   double get winRate => matchesPlayed == 0 ? 0 : matchesWon / matchesPlayed * 100;
 
   factory ProfileModel.fromJson(Map<String, dynamic> json) {
@@ -79,6 +107,16 @@ class ProfileModel {
       steamProfileUrl: json['steam_profile_url'] as String?,
       vacBanned: json['vac_banned'] as bool? ?? false,
       vacBanCount: json['vac_ban_count'] as int? ?? 0,
+      firstName: json['first_name'] as String?,
+      lastName: json['last_name'] as String?,
+      birthDate: json['birth_date'] != null ? DateTime.parse(json['birth_date']) : null,
+      country: json['country'] as String?,
+      bio: json['bio'] as String?,
+      language: json['language'] as String? ?? 'en',
+      twitchUrl: json['twitch_url'] as String?,
+      youtubeUrl: json['youtube_url'] as String?,
+      facebookUrl: json['facebook_url'] as String?,
+      twitterUrl: json['twitter_url'] as String?,
       role: json['role'] as String? ?? 'player',
       kycStatus: json['kyc_status'] as String? ?? 'none',
       isBanned: json['is_banned'] as bool? ?? false,
@@ -91,6 +129,7 @@ class ProfileModel {
       matchesLost: json['matches_lost'] as int? ?? 0,
       winStreak: json['win_streak'] as int? ?? 0,
       bestWinStreak: json['best_win_streak'] as int? ?? 0,
+      prestige: json['prestige'] as int? ?? 0,
       totalEarnings: (json['total_earnings'] as num?)?.toDouble() ?? 0.0,
       preferredRegion: json['preferred_region'] as String? ?? 'EU',
       preferredMode: json['preferred_mode'] as String? ?? '5v5',

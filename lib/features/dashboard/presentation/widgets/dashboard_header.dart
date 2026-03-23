@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../data/models/profile_model.dart';
-import '../../../../shared/widgets/elo_badge.dart';
+import '../../../../shared/widgets/level_badge.dart';
 
 /// Top header with greeting, username, and ELO badge.
 class DashboardHeader extends StatelessWidget {
@@ -69,7 +69,7 @@ class DashboardHeader extends StatelessWidget {
                     style: AppTextStyles.h2,
                   ),
                   const SizedBox(width: 10),
-                  EloBadge(elo: profile.eloRating),
+                  LevelBadge(elo: profile.eloRating),
                 ],
               ),
             ],

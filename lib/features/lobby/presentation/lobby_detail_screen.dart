@@ -10,7 +10,7 @@ import '../../../data/models/lobby_model.dart';
 import '../../../data/repositories/lobby_repository.dart';
 import '../../../services/realtime/realtime_service.dart';
 import '../../../shared/widgets/status_badge.dart';
-import '../../../shared/widgets/elo_badge.dart';
+import '../../../shared/widgets/level_badge.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/glass_card.dart';
 
@@ -613,7 +613,7 @@ class _PlayerRow extends StatelessWidget {
               ],
             ]),
           ),
-          EloBadge(elo: player.elo),
+          LevelBadge.compact(elo: player.elo),
           const SizedBox(width: 10),
           Text(
             player.isReady ? 'READY' : 'NOT READY',
@@ -682,7 +682,7 @@ class _PlayerChip extends StatelessWidget {
             style: AppTextStyles.bodySmall
                 .copyWith(color: AppColors.textSecondary)),
         const SizedBox(width: 6),
-        EloBadge(elo: player.elo),
+        LevelBadge.compact(elo: player.elo),
       ]),
     );
   }

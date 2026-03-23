@@ -10,7 +10,19 @@ class AppConstants {
   // ── ELO ─────────────────────────────────────────────
   static const int defaultElo = 100;
   static const int minElo = 0;
-  static const int maxElo = 5000;
+
+  // ── ELO Gains per Mode ──────────────────────────────
+  static const int elo1v1Win = 30;
+  static const int elo1v1Loss = 29;
+  static const int elo2v2Win = 30;
+  static const int elo2v2Loss = 29;
+  static const int elo5v5Win = 60;
+  static const int elo5v5Loss = 59;
+
+  // ── Level System ────────────────────────────────────
+  static const int eloPerLevel = 300;
+  static const int maxLevel = 50;
+  static const int prestigeEloThreshold = eloPerLevel * maxLevel; // 15000
 
   // ── Financials ──────────────────────────────────────
   static const double rakePercentage = 10.0;
