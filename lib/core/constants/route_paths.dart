@@ -16,6 +16,7 @@ class Routes {
   static const String profile = '/profile/:id';
   static const String myProfile = '/profile/me';
   static const String wallet = '/wallet';
+  static const String shop = '/shop';
   static const String settings = '/settings';
   static const String admin = '/admin';
 }

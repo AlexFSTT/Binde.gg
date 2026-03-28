@@ -23,6 +23,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     DockItem(route: '/lobbies', icon: Icons.groups_rounded, tooltip: 'Lobbies'),
     DockItem(route: '/leaderboard', icon: Icons.leaderboard_rounded, tooltip: 'Leaderboard'),
     DockItem(route: '/play', icon: Icons.play_arrow_rounded, tooltip: 'Play', isPlay: true),
+    DockItem(route: '/shop', icon: Icons.storefront_rounded, tooltip: 'Shop'),
     DockItem(route: '/subscription', icon: Icons.star_rounded, tooltip: 'Subscription'),
     DockItem(route: '/teams', icon: Icons.shield_rounded, tooltip: 'Teams'),
   ];
@@ -101,7 +102,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
               children: [
                 for (int i = 0; i < 3; i++) ...[_buildDockItem(i, cr), if (i < 2) const SizedBox(width: _itemSpacing)],
                 _sep(), _buildDockItem(3, cr), _sep(),
-                for (int i = 4; i < 6; i++) ...[_buildDockItem(i, cr), if (i < 5) const SizedBox(width: _itemSpacing)],
+                for (int i = 4; i < 7; i++) ...[_buildDockItem(i, cr), if (i < 6) const SizedBox(width: _itemSpacing)],
                 const SizedBox(width: _itemSpacing), _buildProfileButton(cr),
               ],
             ),

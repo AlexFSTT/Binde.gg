@@ -34,6 +34,7 @@ class ProfileModel {
   final int bestWinStreak;
   final int prestige;
   final double totalEarnings;
+  final int bcoins;
   final String preferredRegion;
   final String preferredMode;
   final DateTime? lastOnline;
@@ -75,6 +76,7 @@ class ProfileModel {
     this.bestWinStreak = 0,
     this.prestige = 0,
     this.totalEarnings = 0.0,
+    this.bcoins = 100,
     this.preferredRegion = 'EU',
     this.preferredMode = '5v5',
     this.lastOnline,
@@ -131,6 +133,7 @@ class ProfileModel {
       bestWinStreak: json['best_win_streak'] as int? ?? 0,
       prestige: json['prestige'] as int? ?? 0,
       totalEarnings: (json['total_earnings'] as num?)?.toDouble() ?? 0.0,
+      bcoins: json['bcoins'] as int? ?? 100,
       preferredRegion: json['preferred_region'] as String? ?? 'EU',
       preferredMode: json['preferred_mode'] as String? ?? '5v5',
       lastOnline: json['last_online'] != null ? DateTime.parse(json['last_online']) : null,
