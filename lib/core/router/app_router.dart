@@ -17,6 +17,7 @@ import '../../features/subscription/presentation/subscription_screen.dart';
 import '../../features/teams/presentation/teams_screen.dart';
 import '../../features/wallet/presentation/wallet_screen.dart';
 import '../../features/shop/presentation/shop_screen.dart';
+import '../../features/friends/presentation/friends_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
 import '../../shared/layouts/dock_layout.dart';
 
@@ -50,6 +51,7 @@ class AppRouter {
           GoRoute(path: Routes.myProfile, pageBuilder: (c, s) => DockPageTransition(key: s.pageKey, child: const ProfileScreen())),
           GoRoute(path: Routes.wallet, pageBuilder: (c, s) => DockPageTransition(key: s.pageKey, child: const WalletScreen())),
           GoRoute(path: Routes.shop, pageBuilder: (c, s) => DockPageTransition(key: s.pageKey, child: const ShopScreen())),
+          GoRoute(path: Routes.friends, pageBuilder: (c, s) => DockPageTransition(key: s.pageKey, child: const FriendsScreen())),
           GoRoute(path: Routes.settings, pageBuilder: (c, s) => DockPageTransition(key: s.pageKey, child: const SettingsScreen())),
         ],
       ),

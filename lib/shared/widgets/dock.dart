@@ -25,7 +25,7 @@ class _DockState extends State<Dock> with TickerProviderStateMixin {
     DockItem(route: '/play', icon: Icons.play_arrow_rounded, tooltip: 'Play', isPlay: true),
     DockItem(route: '/shop', icon: Icons.storefront_rounded, tooltip: 'Shop'),
     DockItem(route: '/subscription', icon: Icons.star_rounded, tooltip: 'Subscription'),
-    DockItem(route: '/teams', icon: Icons.shield_rounded, tooltip: 'Teams'),
+    DockItem(route: '/friends', icon: Icons.people_alt_rounded, tooltip: 'Friends'),
   ];
 
   static const double _baseItemSize = 44.0;

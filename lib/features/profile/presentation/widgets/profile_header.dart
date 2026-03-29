@@ -1,9 +1,11 @@
+import 'package:binde_gg/core/errors/result.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../data/models/profile_model.dart';
+import '../../../../data/repositories/friends_repository.dart';
 import '../../../../shared/widgets/level_badge.dart';
 import '../../../../shared/widgets/status_badge.dart';
 
@@ -133,13 +135,21 @@ class ProfileHeader extends StatelessWidget {
 
               const SizedBox(width: 16),
 
-              // Right column: Level + Earnings
+              // Right column: Level + Earnings + Bcoins
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   const SizedBox(height: 8),
-                  _EarningsBlock(
-                      earnings: p.totalEarnings, isOwnProfile: isOwnProfile),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _BcoinBlock(bcoins: p.bcoins),
+                      const SizedBox(width: 8),
+                      _EarningsBlock(
+                          earnings: p.totalEarnings,
+                          isOwnProfile: isOwnProfile),
+                    ],
+                  ),
                 ],
               ),
             ],
@@ -187,6 +197,13 @@ class ProfileHeader extends StatelessWidget {
                       child: _SocialBtn(social: s),
                     )),
               ],
+
+              // Actions for other profiles
+              if (!isOwnProfile) ...[
+                if (socials.isEmpty) const Spacer(),
+                if (socials.isNotEmpty) const SizedBox(width: 12),
+                _ProfileActions(userId: p.id),
+              ],
             ],
           ),
         ],
@@ -213,6 +230,73 @@ class ProfileHeader extends StatelessWidget {
           'X', p.twitterUrl!));
     }
     return list;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// EARNINGS BLOCK (top-right corner)
+// ═══════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════
+// BCOIN BLOCK
+// ═══════════════════════════════════════════════════════════
+
+class _BcoinBlock extends StatelessWidget {
+  final int bcoins;
+  const _BcoinBlock({required this.bcoins});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.bgBase.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFFE8A33E), Color(0xFFD4891F)],
+              ),
+              borderRadius: BorderRadius.circular(7),
+              boxShadow: [
+                BoxShadow(
+                    color: AppColors.accent.withValues(alpha: 0.2),
+                    blurRadius: 6)
+              ],
+            ),
+            child: const Center(
+                child: Text('B',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900))),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text('Bcoins',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textTertiary, fontSize: 9)),
+              Text('$bcoins',
+                  style: AppTextStyles.mono.copyWith(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.accent)),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -486,4 +570,207 @@ class _Social {
   final Color color;
   final String label, url;
   const _Social(this.icon, this.color, this.label, this.url);
+}
+
+// ═══════════════════════════════════════════════════════════
+// PROFILE ACTIONS (Add Friend / Report / Block) for other users
+// ═══════════════════════════════════════════════════════════
+
+class _ProfileActions extends StatefulWidget {
+  final String userId;
+  const _ProfileActions({required this.userId});
+  @override
+  State<_ProfileActions> createState() => _ProfileActionsState();
+}
+
+class _ProfileActionsState extends State<_ProfileActions> {
+  final _repo = FriendsRepository();
+  String?
+      _status; // null, 'friends', 'request_sent', 'request_received', 'blocked'
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStatus();
+  }
+
+  Future<void> _loadStatus() async {
+    final status = await _repo.getFriendshipStatus(widget.userId);
+    if (mounted) {
+      setState(() {
+        _status = status;
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(
+              strokeWidth: 2, color: AppColors.textTertiary));
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Main action button
+        if (_status == null) // Not connected
+          _actionBtn(Icons.person_add_rounded, 'Add Friend', AppColors.primary,
+              () async {
+            final result = await _repo.sendFriendRequest(widget.userId);
+            if (result.isSuccess) {
+              setState(() => _status = 'request_sent');
+              _snack('Friend request sent!');
+            } else {
+              _snack(result.error ?? 'Failed', color: AppColors.danger);
+            }
+          })
+        else if (_status == 'friends')
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.success.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(6),
+              border:
+                  Border.all(color: AppColors.success.withValues(alpha: 0.25)),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.check_rounded,
+                  size: 12, color: AppColors.success),
+              const SizedBox(width: 4),
+              Text('FRIENDS',
+                  style: AppTextStyles.caption.copyWith(
+                      color: AppColors.success,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 10)),
+            ]),
+          )
+        else if (_status == 'request_sent')
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+                color: AppColors.warning.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(6)),
+            child: Text('PENDING',
+                style: AppTextStyles.caption.copyWith(
+                    color: AppColors.warning,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 10)),
+          )
+        else if (_status == 'request_received')
+          _actionBtn(Icons.check_circle_rounded, 'Accept', AppColors.success,
+              () async {
+            final inc = await _repo.getIncomingRequests();
+            if (inc.isSuccess) {
+              final req = inc.data!
+                  .where((r) => (r['sender'] as Map)['id'] == widget.userId)
+                  .firstOrNull;
+              if (req != null) {
+                await _repo.acceptRequest(req['id'] as String);
+                setState(() => _status = 'friends');
+                _snack('Friend added!');
+              }
+            }
+          }),
+
+        const SizedBox(width: 6),
+
+        // More actions menu
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.more_horiz_rounded,
+              size: 18, color: AppColors.textTertiary),
+          color: AppColors.bgElevated,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: const BorderSide(color: AppColors.border)),
+          itemBuilder: (_) => [
+            if (_status == 'friends')
+              PopupMenuItem(
+                  value: 'unfriend',
+                  child: Row(children: [
+                    const Icon(Icons.person_remove_rounded,
+                        size: 14, color: AppColors.danger),
+                    const SizedBox(width: 8),
+                    Text('Unfriend',
+                        style: AppTextStyles.bodySmall
+                            .copyWith(color: AppColors.danger)),
+                  ])),
+            PopupMenuItem(
+                value: 'report',
+                child: Row(children: [
+                  const Icon(Icons.flag_rounded,
+                      size: 14, color: AppColors.warning),
+                  const SizedBox(width: 8),
+                  Text('Report',
+                      style: AppTextStyles.bodySmall
+                          .copyWith(color: AppColors.warning)),
+                ])),
+            PopupMenuItem(
+                value: 'block',
+                child: Row(children: [
+                  const Icon(Icons.block_rounded,
+                      size: 14, color: AppColors.danger),
+                  const SizedBox(width: 8),
+                  Text('Block',
+                      style: AppTextStyles.bodySmall
+                          .copyWith(color: AppColors.danger)),
+                ])),
+          ],
+          onSelected: (action) async {
+            switch (action) {
+              case 'unfriend':
+                await _repo.removeFriend(widget.userId);
+                setState(() => _status = null);
+                _snack('Unfriended');
+              case 'report':
+                _snack('Use Friends → Find Players to report',
+                    color: AppColors.info);
+              case 'block':
+                await _repo.blockUser(widget.userId);
+                setState(() => _status = 'blocked');
+                _snack('User blocked', color: AppColors.danger);
+            }
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _actionBtn(
+      IconData icon, String label, Color color, VoidCallback onTap) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: color.withValues(alpha: 0.25)),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 5),
+            Text(label,
+                style: AppTextStyles.caption.copyWith(
+                    color: color, fontWeight: FontWeight.w700, fontSize: 10)),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  void _snack(String msg, {Color? color}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(msg), backgroundColor: color ?? AppColors.success));
+  }
 }
