@@ -1,9 +1,13 @@
 import 'dart:async';
 import 'dart:ui';
+import 'package:binde_gg/core/errors/result.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../../config/supabase_config.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../data/models/notification_model.dart';
+import '../../data/repositories/notification_repository.dart';
 
 enum ConnectionQuality { good, fair, poor, offline }
 
@@ -20,7 +24,9 @@ class _StatusBarState extends State<StatusBar> {
   int _serversOnline = 0;
   int _usersOnline = 0;
   int _ongoingMatches = 0;
+  int _unreadNotifs = 0;
 
+  final _notifRepo = NotificationRepository();
   Timer? _pingTimer;
   Timer? _statsTimer;
 
@@ -75,11 +81,12 @@ class _StatusBarState extends State<StatusBar> {
 
     // Fetch each stat independently to avoid type issues
     try {
-      final usersRes = await client
-          .from('profiles')
-          .select('id')
-          .gte('last_online',
-              DateTime.now().toUtc().subtract(const Duration(minutes: 5)).toIso8601String());
+      final usersRes = await client.from('profiles').select('id').gte(
+          'last_online',
+          DateTime.now()
+              .toUtc()
+              .subtract(const Duration(minutes: 5))
+              .toIso8601String());
       if (mounted) setState(() => _usersOnline = (usersRes as List).length);
     } catch (_) {}
 
@@ -88,7 +95,9 @@ class _StatusBarState extends State<StatusBar> {
           .from('matches')
           .select('id')
           .inFilter('status', ['live', 'ready_check']);
-      if (mounted) setState(() => _ongoingMatches = (matchesRes as List).length);
+      if (mounted) {
+        setState(() => _ongoingMatches = (matchesRes as List).length);
+      }
     } catch (_) {}
 
     try {
@@ -97,6 +106,17 @@ class _StatusBarState extends State<StatusBar> {
           .select('id')
           .inFilter('status', ['veto', 'ready_check', 'live']);
       if (mounted) setState(() => _serversOnline = (serversRes as List).length);
+    } catch (_) {}
+
+    // Notification count
+    try {
+      final userId = SupabaseConfig.auth.currentUser?.id;
+      if (userId != null) {
+        final result = await _notifRepo.getUnreadCount(userId);
+        if (mounted && result.isSuccess) {
+          setState(() => _unreadNotifs = result.data!);
+        }
+      }
     } catch (_) {}
   }
 
@@ -180,6 +200,22 @@ class _StatusBarState extends State<StatusBar> {
                     color: _ongoingMatches > 0
                         ? AppColors.warning
                         : AppColors.textTertiary,
+                  ),
+
+                  _divider(),
+
+                  // Notifications bell
+                  _NotificationBell(
+                    unreadCount: _unreadNotifs,
+                    onRefresh: () async {
+                      final userId = SupabaseConfig.auth.currentUser?.id;
+                      if (userId != null) {
+                        final result = await _notifRepo.getUnreadCount(userId);
+                        if (mounted && result.isSuccess) {
+                          setState(() => _unreadNotifs = result.data!);
+                        }
+                      }
+                    },
                   ),
                 ],
               ),
@@ -341,5 +377,359 @@ class _StatIndicator extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// NOTIFICATION BELL + DROPDOWN PANEL
+// ═══════════════════════════════════════════════════════════
+
+class _NotificationBell extends StatefulWidget {
+  final int unreadCount;
+  final VoidCallback onRefresh;
+  const _NotificationBell({required this.unreadCount, required this.onRefresh});
+  @override
+  State<_NotificationBell> createState() => _NotificationBellState();
+}
+
+class _NotificationBellState extends State<_NotificationBell> {
+  final _notifRepo = NotificationRepository();
+  OverlayEntry? _overlay;
+  final _bellKey = GlobalKey();
+
+  void _toggle() {
+    if (_overlay != null) {
+      _dismiss();
+      return;
+    }
+    final rb = _bellKey.currentContext?.findRenderObject() as RenderBox?;
+    if (rb == null) return;
+    final pos = rb.localToGlobal(Offset.zero);
+    final size = rb.size;
+
+    _overlay = OverlayEntry(
+      builder: (context) => _NotifPanel(
+        anchorX: pos.dx + size.width / 2,
+        anchorY: pos.dy + size.height + 8,
+        onDismiss: _dismiss,
+        onMarkAllRead: () async {
+          final userId = SupabaseConfig.auth.currentUser?.id;
+          if (userId != null) {
+            await _notifRepo.markAllAsRead(userId);
+            widget.onRefresh();
+          }
+        },
+      ),
+    );
+    Overlay.of(context).insert(_overlay!);
+  }
+
+  void _dismiss() {
+    _overlay?.remove();
+    _overlay = null;
+  }
+
+  @override
+  void dispose() {
+    _dismiss();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasUnread = widget.unreadCount > 0;
+    return GestureDetector(
+      onTap: _toggle,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: SizedBox(
+          key: _bellKey,
+          width: 28,
+          height: 22,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Center(
+                  child: Icon(
+                      hasUnread
+                          ? Icons.notifications_active_rounded
+                          : Icons.notifications_none_rounded,
+                      size: 16,
+                      color: hasUnread
+                          ? AppColors.accent
+                          : AppColors.textTertiary)),
+              if (hasUnread)
+                Positioned(
+                    top: -2,
+                    right: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 1),
+                      decoration: BoxDecoration(
+                          color: AppColors.danger,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                              color: AppColors.bgSurface, width: 1.5)),
+                      child: Text(
+                          widget.unreadCount > 99
+                              ? '99+'
+                              : '${widget.unreadCount}',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 8,
+                              fontWeight: FontWeight.w800)),
+                    )),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NotifPanel extends StatefulWidget {
+  final double anchorX, anchorY;
+  final VoidCallback onDismiss, onMarkAllRead;
+  const _NotifPanel(
+      {required this.anchorX,
+      required this.anchorY,
+      required this.onDismiss,
+      required this.onMarkAllRead});
+  @override
+  State<_NotifPanel> createState() => _NotifPanelState();
+}
+
+class _NotifPanelState extends State<_NotifPanel> {
+  final _repo = NotificationRepository();
+  List<NotificationModel> _notifs = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final userId = SupabaseConfig.auth.currentUser?.id;
+    if (userId == null) return;
+    final result = await _repo.getNotifications(userId, limit: 15);
+    if (!mounted) return;
+    result.when(
+      success: (list) => setState(() {
+        _notifs = list;
+        _loading = false;
+      }),
+      failure: (_, __) => setState(() => _loading = false),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const w = 340.0;
+    final left = (widget.anchorX - w / 2)
+        .clamp(16.0, MediaQuery.of(context).size.width - w - 16);
+
+    return Stack(children: [
+      Positioned.fill(
+          child: GestureDetector(
+              onTap: widget.onDismiss,
+              behavior: HitTestBehavior.translucent,
+              child: const SizedBox.expand())),
+      Positioned(
+          left: left,
+          top: widget.anchorY,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: w,
+              constraints: const BoxConstraints(maxHeight: 420),
+              decoration: BoxDecoration(
+                  color: AppColors.bgElevated,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.border),
+                  boxShadow: [
+                    BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8))
+                  ]),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                // Header
+                Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+                    child: Row(children: [
+                      const Icon(Icons.notifications_rounded,
+                          size: 16, color: AppColors.primary),
+                      const SizedBox(width: 8),
+                      Text('Notifications',
+                          style: AppTextStyles.label.copyWith(fontSize: 13)),
+                      const Spacer(),
+                      if (_notifs.any((n) => !n.isRead))
+                        TextButton(
+                          onPressed: () {
+                            widget.onMarkAllRead();
+                            setState(() => _notifs = _notifs
+                                .map((n) => NotificationModel(
+                                      id: n.id,
+                                      userId: n.userId,
+                                      type: n.type,
+                                      title: n.title,
+                                      message: n.message,
+                                      data: n.data,
+                                      isRead: true,
+                                      createdAt: n.createdAt,
+                                    ))
+                                .toList());
+                          },
+                          style: TextButton.styleFrom(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 8)),
+                          child: Text('Mark all read',
+                              style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.primary,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600)),
+                        ),
+                    ])),
+                Container(
+                    height: 1, color: AppColors.border.withValues(alpha: 0.3)),
+
+                if (_loading)
+                  const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Center(
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: AppColors.primary)))
+                else if (_notifs.isEmpty)
+                  Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(children: [
+                        Icon(Icons.notifications_off_rounded,
+                            size: 28,
+                            color:
+                                AppColors.textTertiary.withValues(alpha: 0.4)),
+                        const SizedBox(height: 8),
+                        Text('No notifications',
+                            style: AppTextStyles.bodySmall
+                                .copyWith(color: AppColors.textTertiary)),
+                      ]))
+                else
+                  Flexible(
+                      child: ListView.builder(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    itemCount: _notifs.length,
+                    itemBuilder: (context, i) => _NotifTile(
+                        notif: _notifs[i],
+                        onTap: () async {
+                          if (!_notifs[i].isRead) {
+                            await _repo.markAsRead(_notifs[i].id);
+                            widget.onMarkAllRead();
+                          }
+                          if (!context.mounted) return;
+                          widget.onDismiss();
+                          final data = _notifs[i].data;
+                          switch (_notifs[i].type) {
+                            case 'friend_request' || 'friend_accepted':
+                              context.go('/friends');
+                            case 'match_ready' || 'match_result':
+                              final matchId = data['match_id'] as String?;
+                              if (matchId != null) {
+                                context.go('/match/$matchId');
+                              }
+                            default:
+                              break;
+                          }
+                        }),
+                  )),
+              ]),
+            ),
+          )),
+    ]);
+  }
+}
+
+class _NotifTile extends StatelessWidget {
+  final NotificationModel notif;
+  final VoidCallback onTap;
+  const _NotifTile({required this.notif, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final (icon, color) = _iconForType(notif.type);
+    return InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+              color: notif.isRead
+                  ? null
+                  : AppColors.primary.withValues(alpha: 0.03),
+              border: Border(
+                  bottom: BorderSide(
+                      color: AppColors.border.withValues(alpha: 0.2)))),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(
+                width: 6,
+                height: 6,
+                margin: const EdgeInsets.only(top: 5, right: 8),
+                decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color:
+                        notif.isRead ? Colors.transparent : AppColors.primary)),
+            Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(7)),
+                child: Icon(icon, size: 14, color: color)),
+            const SizedBox(width: 10),
+            Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Text(notif.title,
+                      style: AppTextStyles.label.copyWith(
+                          fontSize: 11,
+                          color: notif.isRead
+                              ? AppColors.textSecondary
+                              : AppColors.textPrimary)),
+                  const SizedBox(height: 1),
+                  Text(notif.message,
+                      style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textTertiary, fontSize: 10),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
+                ])),
+            const SizedBox(width: 8),
+            Text(_timeAgo(notif.createdAt),
+                style: AppTextStyles.caption
+                    .copyWith(color: AppColors.textTertiary, fontSize: 9)),
+          ]),
+        ));
+  }
+
+  (IconData, Color) _iconForType(String type) => switch (type) {
+        'friend_request' => (Icons.person_add_rounded, AppColors.info),
+        'friend_accepted' => (Icons.people_rounded, AppColors.success),
+        'match_ready' => (Icons.sports_esports_rounded, AppColors.accent),
+        'match_result' => (Icons.emoji_events_rounded, AppColors.warning),
+        'warning' => (Icons.warning_amber_rounded, AppColors.danger),
+        'cooldown' => (Icons.timer_rounded, AppColors.warning),
+        'reward' => (Icons.card_giftcard_rounded, AppColors.accent),
+        'achievement' => (Icons.military_tech_rounded, AppColors.warning),
+        'system' => (Icons.info_rounded, AppColors.info),
+        _ => (Icons.notifications_rounded, AppColors.textTertiary),
+      };
+
+  String _timeAgo(DateTime dt) {
+    final diff = DateTime.now().toUtc().difference(dt);
+    if (diff.inMinutes < 1) return 'now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+    if (diff.inHours < 24) return '${diff.inHours}h';
+    if (diff.inDays < 7) return '${diff.inDays}d';
+    return '${dt.day}/${dt.month}';
   }
 }

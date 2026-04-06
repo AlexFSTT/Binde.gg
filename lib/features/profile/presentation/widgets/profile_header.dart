@@ -139,6 +139,7 @@ class ProfileHeader extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  LevelBadge.full(elo: p.eloRating),
                   const SizedBox(height: 8),
                   Row(
                     mainAxisSize: MainAxisSize.min,
@@ -607,6 +608,7 @@ class _ProfileActionsState extends State<_ProfileActions> {
 
   @override
   Widget build(BuildContext context) {
+    // ignore: curly_braces_in_flow_control_structures
     if (_loading) {
       return const SizedBox(
           width: 24,
