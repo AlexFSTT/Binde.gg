@@ -35,6 +35,7 @@ class ProfileModel {
   final int prestige;
   final double totalEarnings;
   final int bcoins;
+  final int subscriptionTier; // 0=Free, 1=Premium, 2=Premium Plus
   final String preferredRegion;
   final String preferredMode;
   final DateTime? lastOnline;
@@ -77,6 +78,7 @@ class ProfileModel {
     this.prestige = 0,
     this.totalEarnings = 0.0,
     this.bcoins = 100,
+    this.subscriptionTier = 0,
     this.preferredRegion = 'EU',
     this.preferredMode = '5v5',
     this.lastOnline,
@@ -89,6 +91,8 @@ class ProfileModel {
   bool get isModerator => role == 'moderator';
   bool get isStaff => isAdmin || isModerator;
   bool get isKycVerified => kycStatus == 'verified';
+  bool get isPremium => subscriptionTier >= 1;
+  bool get isPremiumPlus => subscriptionTier >= 2;
 
   /// Level (1-50) based on ELO. Each level = 300 ELO.
   int get level => (eloRating ~/ 300 + 1).clamp(1, 50);
@@ -134,6 +138,7 @@ class ProfileModel {
       prestige: json['prestige'] as int? ?? 0,
       totalEarnings: (json['total_earnings'] as num?)?.toDouble() ?? 0.0,
       bcoins: json['bcoins'] as int? ?? 100,
+      subscriptionTier: json['subscription_tier'] as int? ?? 0,
       preferredRegion: json['preferred_region'] as String? ?? 'EU',
       preferredMode: json['preferred_mode'] as String? ?? '5v5',
       lastOnline: json['last_online'] != null ? DateTime.parse(json['last_online']) : null,

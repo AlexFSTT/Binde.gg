@@ -37,32 +37,8 @@ class ProfileHeader extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Avatar
-              Container(
-                width: 76,
-                height: 76,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                      color: AppColors.primary.withValues(alpha: 0.3),
-                      width: 2),
-                  image: p.steamAvatarUrl != null
-                      ? DecorationImage(
-                          image: NetworkImage(p.steamAvatarUrl!),
-                          fit: BoxFit.cover)
-                      : null,
-                ),
-                child: p.steamAvatarUrl == null
-                    ? Center(
-                        child: Text(
-                            p.username.isNotEmpty
-                                ? p.username[0].toUpperCase()
-                                : '?',
-                            style: AppTextStyles.h1.copyWith(
-                                color: AppColors.primary, fontSize: 28)))
-                    : null,
-              ),
+              // Avatar (with Premium Plus frame if applicable)
+              _ProfileAvatar(profile: p),
               const SizedBox(width: 20),
 
               // Identity
@@ -76,6 +52,13 @@ class ProfileHeader extends StatelessWidget {
                         Text(p.username, style: AppTextStyles.h2),
                         const SizedBox(width: 12),
                         LevelBadge.full(elo: p.eloRating),
+                        if (p.isPremiumPlus) ...[
+                          const SizedBox(width: 8),
+                          _SubscriptionBadge(tier: 2),
+                        ] else if (p.isPremium) ...[
+                          const SizedBox(width: 8),
+                          _SubscriptionBadge(tier: 1),
+                        ],
                         if (p.isStaff) ...[
                           const SizedBox(width: 8),
                           StatusBadge(
@@ -237,6 +220,149 @@ class ProfileHeader extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════
 // EARNINGS BLOCK (top-right corner)
 // ═══════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════
+// BCOIN BLOCK
+// ═══════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════
+// PROFILE AVATAR — with Premium Plus animated frame
+// ═══════════════════════════════════════════════════════════
+
+class _ProfileAvatar extends StatefulWidget {
+  final ProfileModel profile;
+  const _ProfileAvatar({required this.profile});
+  @override
+  State<_ProfileAvatar> createState() => _ProfileAvatarState();
+}
+
+class _ProfileAvatarState extends State<_ProfileAvatar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl =
+        AnimationController(vsync: this, duration: const Duration(seconds: 3));
+    if (widget.profile.isPremiumPlus) _ctrl.repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.profile;
+    final isPP = p.isPremiumPlus;
+    final isPrem = p.isPremium && !isPP;
+
+    final borderColor = isPP
+        ? null // gradient
+        : isPrem
+            ? AppColors.primary.withValues(alpha: 0.5)
+            : AppColors.primary.withValues(alpha: 0.3);
+
+    Widget avatar = Container(
+      width: 76,
+      height: 76,
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(18),
+        border: isPP ? null : Border.all(color: borderColor!, width: 2),
+        image: p.steamAvatarUrl != null
+            ? DecorationImage(
+                image: NetworkImage(p.steamAvatarUrl!), fit: BoxFit.cover)
+            : null,
+      ),
+      child: p.steamAvatarUrl == null
+          ? Center(
+              child: Text(
+                  p.username.isNotEmpty ? p.username[0].toUpperCase() : '?',
+                  style: AppTextStyles.h1
+                      .copyWith(color: AppColors.primary, fontSize: 28)))
+          : null,
+    );
+
+    // Premium Plus: animated gold gradient frame
+    if (isPP) {
+      return AnimatedBuilder(
+        animation: _ctrl,
+        builder: (context, child) {
+          return Container(
+            width: 82,
+            height: 82,
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              gradient: SweepGradient(
+                center: Alignment.center,
+                startAngle: _ctrl.value * 6.28,
+                colors: const [
+                  Color(0xFFFFD700),
+                  Color(0xFFF5A623),
+                  Color(0xFFE8A33E),
+                  Color(0xFFFFD700),
+                ],
+              ),
+              boxShadow: [
+                BoxShadow(
+                    color: const Color(0xFFFFD700).withValues(alpha: 0.2),
+                    blurRadius: 10,
+                    spreadRadius: 1),
+              ],
+            ),
+            child: avatar,
+          );
+        },
+      );
+    }
+
+    return avatar;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// SUBSCRIPTION BADGE
+// ═══════════════════════════════════════════════════════════
+
+class _SubscriptionBadge extends StatelessWidget {
+  final int tier;
+  const _SubscriptionBadge({required this.tier});
+
+  @override
+  Widget build(BuildContext context) {
+    final isPP = tier == 2;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        gradient: isPP
+            ? const LinearGradient(
+                colors: [Color(0xFFFFD700), Color(0xFFF5A623)])
+            : null,
+        color: isPP ? null : AppColors.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(5),
+        border: isPP
+            ? null
+            : Border.all(color: AppColors.primary.withValues(alpha: 0.25)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(isPP ? Icons.workspace_premium : Icons.star_rounded,
+            size: 11, color: isPP ? Colors.white : AppColors.primary),
+        const SizedBox(width: 3),
+        Text(isPP ? 'PLUS' : 'PREMIUM',
+            style: AppTextStyles.caption.copyWith(
+                color: isPP ? Colors.white : AppColors.primary,
+                fontWeight: FontWeight.w800,
+                fontSize: 9,
+                letterSpacing: 0.5)),
+      ]),
+    );
+  }
+}
 
 // ═══════════════════════════════════════════════════════════
 // BCOIN BLOCK
@@ -608,7 +734,6 @@ class _ProfileActionsState extends State<_ProfileActions> {
 
   @override
   Widget build(BuildContext context) {
-    // ignore: curly_braces_in_flow_control_structures
     if (_loading) {
       return const SizedBox(
           width: 24,
