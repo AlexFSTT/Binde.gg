@@ -28,6 +28,8 @@ class AppConstants {
   static const double rakePercentage = 10.0;
   static const double minEntryFee = 0.50;
   static const double maxEntryFee = 100.00;
+  static const int maxEntryFeeBcoins = 10000;
+  static const int minEntryFeeBcoins = 0;
 
   // ── Pagination ──────────────────────────────────────
   static const int defaultPageSize = 20;

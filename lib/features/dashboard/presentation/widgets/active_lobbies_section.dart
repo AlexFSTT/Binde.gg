@@ -3,7 +3,6 @@ import 'package:go_router/go_router.dart';
 import '../../../../config/supabase_config.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
-import '../../../../core/utils/formatters.dart';
 import '../../../../core/constants/route_paths.dart';
 import '../../../../data/models/lobby_model.dart';
 
@@ -98,9 +97,8 @@ class _ActiveLobbiesSectionState extends State<ActiveLobbiesSection> {
                 : (_lobbies == null || _lobbies!.isEmpty)
                     ? const _EmptyState()
                     : Column(
-                        children: _lobbies!
-                            .map((l) => _LobbyRow(lobby: l))
-                            .toList(),
+                        children:
+                            _lobbies!.map((l) => _LobbyRow(lobby: l)).toList(),
                       ),
           ),
         ],
@@ -144,8 +142,7 @@ class _LobbyRowState extends State<_LobbyRow> {
             children: [
               // Mode badge
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: AppColors.bgSurfaceActive,
                   borderRadius: BorderRadius.circular(6),
@@ -196,15 +193,11 @@ class _LobbyRowState extends State<_LobbyRow> {
 
               // Entry fee
               Text(
-                l.entryFee > 0
-                    ? Formatters.currency(l.entryFee)
-                    : 'Free',
+                l.entryFee > 0 ? '${l.entryFee.toInt()} B' : 'Free',
                 style: AppTextStyles.mono.copyWith(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: l.entryFee > 0
-                      ? AppColors.primary
-                      : AppColors.success,
+                  color: l.entryFee > 0 ? AppColors.accent : AppColors.success,
                 ),
               ),
             ],
@@ -226,8 +219,7 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           children: [
             Icon(Icons.groups_outlined,
-                size: 40,
-                color: AppColors.textTertiary.withValues(alpha: 0.4)),
+                size: 40, color: AppColors.textTertiary.withValues(alpha: 0.4)),
             const SizedBox(height: 12),
             Text('No open lobbies',
                 style: AppTextStyles.bodyMedium

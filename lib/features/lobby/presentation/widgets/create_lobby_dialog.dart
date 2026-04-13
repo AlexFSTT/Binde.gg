@@ -18,8 +18,10 @@ class CreateLobbyDialog extends StatefulWidget {
 class _CreateLobbyDialogState extends State<CreateLobbyDialog> {
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController(text: '');
-  final _feeCtrl = TextEditingController(text: '1.00');
+  final _feeCtrl = TextEditingController(text: '0');
   final _lobbyRepo = LobbyRepository();
+
+  int _userBcoins = 0;
 
   String _mode = '5v5';
   String _region = 'EU';
@@ -27,8 +29,30 @@ class _CreateLobbyDialogState extends State<CreateLobbyDialog> {
   bool _isLoading = false;
   String? _error;
 
+  static const _feePresets = [0, 10, 25, 50, 100, 250, 500];
+
   int get _maxPlayers =>
       MatchMode.values.firstWhere((m) => m.label == _mode).totalPlayers;
+
+  int get _potTotal {
+    final fee = int.tryParse(_feeCtrl.text) ?? 0;
+    return fee * _maxPlayers;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBalance();
+  }
+
+  Future<void> _loadBalance() async {
+    try {
+      final userId = SupabaseConfig.auth.currentUser!.id;
+      final profile = await SupabaseConfig.client
+          .from('profiles').select('bcoins').eq('id', userId).single();
+      if (mounted) setState(() => _userBcoins = profile['bcoins'] as int? ?? 0);
+    } catch (_) {}
+  }
 
   @override
   void dispose() {
@@ -46,13 +70,22 @@ class _CreateLobbyDialogState extends State<CreateLobbyDialog> {
     });
 
     final userId = SupabaseConfig.auth.currentUser!.id;
-    final fee = double.tryParse(_feeCtrl.text) ?? 0;
+    final fee = int.tryParse(_feeCtrl.text) ?? 0;
+
+    // Check user has enough Bcoins
+    if (fee > _userBcoins) {
+      setState(() {
+        _isLoading = false;
+        _error = 'Insufficient Bcoins. You have $_userBcoins, need $fee to enter.';
+      });
+      return;
+    }
 
     final result = await _lobbyRepo.createLobby({
       'created_by': userId,
       'name': _nameCtrl.text.trim(),
       'mode': _mode,
-      'entry_fee': fee,
+      'entry_fee': fee.toDouble(), // store as Bcoin amount in existing column
       'max_players': _maxPlayers,
       'region': _region,
       'is_private': _isPrivate,
@@ -181,36 +214,114 @@ class _CreateLobbyDialogState extends State<CreateLobbyDialog> {
 
                 const SizedBox(height: 20),
 
-                // Entry Fee + Private toggle
+                // Entry Fee (Bcoins) section
+                Row(
+                  children: [
+                    _Label('ENTRY FEE (BCOINS)'),
+                    const Spacer(),
+                    // User balance chip
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(5),
+                        border: Border.all(color: AppColors.accent.withValues(alpha: 0.2)),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Container(
+                          width: 14, height: 14,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFE8A33E), Color(0xFFD4891F)]),
+                            borderRadius: BorderRadius.circular(3)),
+                          child: const Center(child: Text('B',
+                              style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900))),
+                        ),
+                        const SizedBox(width: 5),
+                        Text('Balance: $_userBcoins',
+                            style: AppTextStyles.caption.copyWith(
+                                color: AppColors.accent, fontWeight: FontWeight.w700, fontSize: 10)),
+                      ]),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+
+                // Preset chips
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: _feePresets.map((preset) {
+                    final isSelected = (int.tryParse(_feeCtrl.text) ?? 0) == preset;
+                    final insufficient = preset > _userBcoins;
+                    return GestureDetector(
+                      onTap: insufficient ? null : () {
+                        setState(() => _feeCtrl.text = '$preset');
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? AppColors.accent.withValues(alpha: 0.15)
+                              : AppColors.bgSurfaceActive,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: isSelected
+                                ? AppColors.accent.withValues(alpha: 0.4)
+                                : insufficient
+                                    ? AppColors.border.withValues(alpha: 0.3)
+                                    : AppColors.border,
+                          ),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Text(preset == 0 ? 'Free' : '$preset',
+                              style: AppTextStyles.mono.copyWith(
+                                  fontSize: 12, fontWeight: FontWeight.w700,
+                                  color: isSelected
+                                      ? AppColors.accent
+                                      : insufficient
+                                          ? AppColors.textTertiary.withValues(alpha: 0.5)
+                                          : AppColors.textSecondary)),
+                          if (preset > 0) ...[
+                            const SizedBox(width: 3),
+                            Text('B', style: AppTextStyles.caption.copyWith(
+                                fontSize: 9, fontWeight: FontWeight.w700,
+                                color: isSelected
+                                    ? AppColors.accent.withValues(alpha: 0.6)
+                                    : AppColors.textTertiary)),
+                          ],
+                        ]),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 10),
+
+                // Custom amount + Visibility
                 Row(
                   children: [
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _Label('ENTRY FEE (€)'),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            controller: _feeCtrl,
-                            style: AppTextStyles.mono,
-                            keyboardType: const TextInputType.numberWithOptions(
-                                decimal: true),
-                            decoration: const InputDecoration(
-                              hintText: '0.00',
-                              prefixText: '€ ',
-                            ),
-                            validator: (v) {
-                              if (v == null || v.isEmpty) return 'Required';
-                              final fee = double.tryParse(v);
-                              if (fee == null) return 'Invalid';
-                              if (fee < 0) return 'Min €0';
-                              if (fee > AppConstants.maxEntryFee) {
-                                return 'Max €${AppConstants.maxEntryFee}';
-                              }
-                              return null;
-                            },
-                          ),
-                        ],
+                      child: TextFormField(
+                        controller: _feeCtrl,
+                        style: AppTextStyles.mono,
+                        keyboardType: TextInputType.number,
+                        onChanged: (_) => setState(() {}),
+                        decoration: const InputDecoration(
+                          hintText: 'Custom amount',
+                          prefixIcon: Icon(Icons.edit_rounded, size: 16, color: AppColors.textTertiary),
+                          suffixText: 'B',
+                        ),
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return 'Required';
+                          final fee = int.tryParse(v);
+                          if (fee == null) return 'Invalid';
+                          if (fee < 0) return 'Min 0';
+                          if (fee > AppConstants.maxEntryFeeBcoins) {
+                            return 'Max ${AppConstants.maxEntryFeeBcoins}B';
+                          }
+                          if (fee > _userBcoins) return 'Insufficient';
+                          return null;
+                        },
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -232,22 +343,37 @@ class _CreateLobbyDialogState extends State<CreateLobbyDialog> {
                   ],
                 ),
 
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
 
-                // Summary
+                // Summary with pot
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: AppColors.bgSurfaceActive,
                     borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
                   ),
-                  child: Text(
-                    '$_mode · $_region · $_maxPlayers players · ${_isPrivate ? "Private" : "Public"}',
-                    style: AppTextStyles.bodySmall
-                        .copyWith(color: AppColors.textTertiary),
-                    textAlign: TextAlign.center,
-                  ),
+                  child: Column(children: [
+                    Text('$_mode · $_region · $_maxPlayers players · ${_isPrivate ? "Private" : "Public"}',
+                        style: AppTextStyles.bodySmall.copyWith(color: AppColors.textTertiary),
+                        textAlign: TextAlign.center),
+                    if (_potTotal > 0) ...[
+                      const SizedBox(height: 6),
+                      Container(height: 1, color: AppColors.border.withValues(alpha: 0.3)),
+                      const SizedBox(height: 6),
+                      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        Text('TOTAL POT: ', style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textTertiary, letterSpacing: 0.8)),
+                        Text('$_potTotal', style: AppTextStyles.mono.copyWith(
+                            color: AppColors.accent, fontWeight: FontWeight.w800, fontSize: 14)),
+                        const SizedBox(width: 2),
+                        Text('B', style: AppTextStyles.caption.copyWith(
+                            color: AppColors.accent.withValues(alpha: 0.7),
+                            fontWeight: FontWeight.w700)),
+                      ]),
+                    ],
+                  ]),
                 ),
 
                 const SizedBox(height: 24),

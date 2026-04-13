@@ -466,12 +466,12 @@ class _LobbyRowState extends State<_LobbyRow> {
               SizedBox(
                 width: 80,
                 child: Text(
-                  l.entryFee > 0 ? Formatters.currency(l.entryFee) : 'Free',
+                  l.entryFee > 0 ? '${l.entryFee.toInt()} B' : 'Free',
                   style: AppTextStyles.mono.copyWith(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color:
-                        l.entryFee > 0 ? AppColors.primary : AppColors.success,
+                        l.entryFee > 0 ? AppColors.accent : AppColors.success,
                   ),
                 ),
               ),

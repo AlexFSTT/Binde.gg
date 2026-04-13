@@ -318,7 +318,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${lobby.mode} · ${lobby.region} · ELO ${lobby.minElo}-${lobby.maxElo} · ${lobby.entryFee > 0 ? Formatters.currency(lobby.entryFee) : "Free"}',
+                        '${lobby.mode} · ${lobby.region} · ELO ${lobby.minElo}-${lobby.maxElo} · ${lobby.entryFee > 0 ? "${lobby.entryFee.toInt()} B" : "Free"}',
                         style: AppTextStyles.bodySmall
                             .copyWith(color: AppColors.textTertiary),
                       ),
@@ -710,7 +710,7 @@ class _LobbyInfoBar extends StatelessWidget {
           _InfoItem(
               label: 'Entry Fee',
               value: lobby.entryFee > 0
-                  ? Formatters.currency(lobby.entryFee)
+                  ? '${lobby.entryFee.toInt()} B'
                   : 'Free'),
           _InfoItem(
               label: 'Players', value: '$playerCount/${lobby.maxPlayers}'),

@@ -301,7 +301,7 @@ class _MatchScreenState extends State<MatchScreen> {
                 ),
               ],
               const Spacer(),
-              Text('${m.mode} · ${m.entryFee > 0 ? "Pot: ${Formatters.currency(m.totalPot)}" : "Free"}',
+              Text('${m.mode} · ${m.entryFee > 0 ? "Pot: ${m.totalPot.toInt()} B" : "Free"}',
                   style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textTertiary)),
             ]),
 
