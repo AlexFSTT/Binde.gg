@@ -205,11 +205,12 @@ class LobbyRepository {
     }
   }
 
-  /// Join a lobby — fails if user is in another active lobby or match.
+  /// Join a lobby — atomically deducts Bcoins if paid.
+  /// Uses RPC `fn_join_paid_lobby` for atomicity.
   Future<Result<void>> joinLobby(String lobbyId, String playerId,
       {String? team}) async {
     try {
-      // Check if already in THIS lobby
+      // Check if already in THIS lobby (idempotent)
       final existing = await _client
           .from('lobby_players')
           .select('id')
@@ -221,7 +222,7 @@ class LobbyRepository {
         return const Success(null);
       }
 
-      // Check if locked (active match or another lobby)
+      // Check lock (another active match/lobby)
       final activeMatchId = await getActiveMatchForUser(playerId);
       if (activeMatchId != null) {
         return const Failure(
@@ -234,31 +235,32 @@ class LobbyRepository {
             'You are already in an active lobby ("${activeLobby.name}"). Leave it first before joining another.');
       }
 
-      // Auto-assign team if not specified
-      if (team == null) {
-        final lobby = await _client
-            .from('lobbies')
-            .select('max_players')
-            .eq('id', lobbyId)
-            .single();
+      // Call RPC — handles fee deduction + team assignment + insert atomically
+      final result = await _client.rpc('fn_join_paid_lobby', params: {
+        'p_lobby_id': lobbyId,
+        'p_player_id': playerId,
+        'p_team': team,
+      });
 
-        final playersPerTeam = (lobby['max_players'] as int) ~/ 2;
-
-        final teamACounts = await _client
-            .from('lobby_players')
-            .select('id')
-            .eq('lobby_id', lobbyId)
-            .eq('team', 'team_a');
-
-        team = (teamACounts.length < playersPerTeam) ? 'team_a' : 'team_b';
+      final data = result as Map<String, dynamic>;
+      if (data['success'] == true) {
+        return const Success(null);
       }
 
-      await _client.from('lobby_players').insert({
-        'lobby_id': lobbyId,
-        'player_id': playerId,
-        'team': team,
-      });
-      return const Success(null);
+      // Handle errors
+      final err = data['error'] as String?;
+      if (err == 'INSUFFICIENT_BCOINS') {
+        final balance = data['balance'];
+        final required = data['required'];
+        return Failure('Insufficient Bcoins. You have $balance B, need $required B to join.');
+      }
+      if (err == 'LOBBY_NOT_OPEN') {
+        return const Failure('This lobby is no longer open.');
+      }
+      if (err == 'LOBBY_NOT_FOUND') {
+        return const Failure('Lobby not found.');
+      }
+      return Failure(err ?? 'Failed to join lobby');
     } catch (e) {
       if (e.toString().contains('23505')) {
         return const Success(null);
@@ -267,14 +269,25 @@ class LobbyRepository {
     }
   }
 
+  /// Leave a lobby — atomically refunds Bcoins if paid and match not started.
+  /// Uses RPC `fn_leave_paid_lobby` for atomicity.
   Future<Result<void>> leaveLobby(String lobbyId, String playerId) async {
     try {
-      await _client
-          .from('lobby_players')
-          .delete()
-          .eq('lobby_id', lobbyId)
-          .eq('player_id', playerId);
-      return const Success(null);
+      final result = await _client.rpc('fn_leave_paid_lobby', params: {
+        'p_lobby_id': lobbyId,
+        'p_player_id': playerId,
+      });
+
+      final data = result as Map<String, dynamic>;
+      if (data['success'] == true) {
+        return const Success(null);
+      }
+
+      final err = data['error'] as String?;
+      if (err == 'MATCH_ALREADY_STARTED') {
+        return const Failure('Cannot leave — match has already started.');
+      }
+      return Failure(err ?? 'Failed to leave lobby');
     } catch (e) {
       return Failure(e.toString());
     }

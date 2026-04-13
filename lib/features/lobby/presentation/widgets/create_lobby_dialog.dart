@@ -93,17 +93,30 @@ class _CreateLobbyDialogState extends State<CreateLobbyDialog> {
 
     if (!mounted) return;
 
-    result.when(
-      success: (lobby) {
-        // Auto-join the creator
-        _lobbyRepo.joinLobby(lobby.id, userId, team: 'team_a');
-        Navigator.of(context).pop(lobby);
-      },
-      failure: (msg, _) => setState(() {
+    if (result.isFailure) {
+      setState(() {
         _isLoading = false;
-        _error = msg;
-      }),
-    );
+        _error = result.error;
+      });
+      return;
+    }
+
+    final lobby = result.data!;
+
+    // Auto-join the creator (deducts fee via RPC)
+    final joinResult = await _lobbyRepo.joinLobby(lobby.id, userId, team: 'team_a');
+    if (!mounted) return;
+
+    if (joinResult.isFailure) {
+      // Rare: lobby created but creator couldn't join (e.g. race condition)
+      setState(() {
+        _isLoading = false;
+        _error = joinResult.error;
+      });
+      return;
+    }
+
+    Navigator.of(context).pop(lobby);
   }
 
   @override
