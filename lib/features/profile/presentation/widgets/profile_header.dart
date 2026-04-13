@@ -51,6 +51,7 @@ class ProfileHeader extends StatelessWidget {
                       children: [
                         Text(p.username, style: AppTextStyles.h2),
                         const SizedBox(width: 12),
+                        LevelBadge.full(elo: p.eloRating),
                         if (p.isPremiumPlus) ...[
                           const SizedBox(width: 8),
                           _SubscriptionBadge(tier: 2),
@@ -121,7 +122,6 @@ class ProfileHeader extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  LevelBadge.full(elo: p.eloRating),
                   const SizedBox(height: 8),
                   Row(
                     mainAxisSize: MainAxisSize.min,
