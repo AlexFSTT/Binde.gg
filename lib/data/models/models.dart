@@ -5,3 +5,4 @@ export 'match_model.dart';
 export 'match_player_model.dart';
 export 'transaction_model.dart';
 export 'notification_model.dart';
+export 'matchmaking_queue_model.dart';
