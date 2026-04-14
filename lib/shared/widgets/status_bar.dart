@@ -8,6 +8,9 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../data/models/notification_model.dart';
 import '../../data/repositories/notification_repository.dart';
+import '../../data/models/active_presence.dart';
+import '../../services/presence/presence_service.dart';
+import 'presence_pill.dart';
 
 enum ConnectionQuality { good, fair, poor, offline }
 
@@ -25,6 +28,8 @@ class _StatusBarState extends State<StatusBar> {
   int _usersOnline = 0;
   int _ongoingMatches = 0;
   int _unreadNotifs = 0;
+  ActivePresence? _presence;
+  StreamSubscription<ActivePresence?>? _presenceSub;
 
   final _notifRepo = NotificationRepository();
   Timer? _pingTimer;
@@ -44,12 +49,19 @@ class _StatusBarState extends State<StatusBar> {
       const Duration(seconds: 30),
       (_) => _fetchPlatformStats(),
     );
+
+    // Subscribe to presence updates
+    _presence = PresenceService().current;
+    _presenceSub = PresenceService().presenceStream.listen((p) {
+      if (mounted) setState(() => _presence = p);
+    });
   }
 
   @override
   void dispose() {
     _pingTimer?.cancel();
     _statsTimer?.cancel();
+    _presenceSub?.cancel();
     super.dispose();
   }
 
@@ -160,6 +172,15 @@ class _StatusBarState extends State<StatusBar> {
                       letterSpacing: 1.5,
                     ),
                   ),
+
+// ── Presence pill (inserat aici) ────────────
+                  if (_presence != null) ...[
+                    const SizedBox(width: 12),
+                    PresencePill(
+                      presence: _presence!,
+                      currentRoute: GoRouterState.of(context).matchedLocation,
+                    ),
+                  ],
 
                   _divider(),
 

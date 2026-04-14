@@ -18,13 +18,6 @@ import 'widgets/searching_state.dart';
 import 'widgets/accept_match_dialog.dart';
 
 /// Play screen — FACEIT-style matchmaking entry.
-///
-/// Flow:
-///   1. Pick mode (1v1/2v2/5v5)
-///   2. Pick entry fee (presets)
-///   3. Find match → enqueue + listen realtime
-///   4. When matched → accept dialog
-///   5. When all accept → redirect to /match/:id (veto phase)
 class PlayScreen extends StatefulWidget {
   const PlayScreen({super.key});
 
@@ -100,7 +93,6 @@ class _PlayScreenState extends State<PlayScreen> {
       return;
     }
 
-    // Fetch the freshly-created row so we have full state
     final queueResult = await _repo.getActiveQueue(_userId);
     if (!mounted) return;
 
@@ -132,7 +124,7 @@ class _PlayScreenState extends State<PlayScreen> {
     }
   }
 
-  // ── Realtime subscription ───────────────────────────────
+  // ── Realtime subscription on queue row ──────────────────
   void _subscribeQueue() {
     if (_queue == null) return;
 
@@ -159,11 +151,10 @@ class _PlayScreenState extends State<PlayScreen> {
         )
         .subscribe();
 
-    // Tick timer to update the "searching for 0:23" counter
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted && _queue != null && _queue!.isSearching) {
-        setState(() {}); // rebuild the wait timer display
+        setState(() {});
       }
     });
   }
@@ -203,42 +194,51 @@ class _PlayScreenState extends State<PlayScreen> {
 
     if (!mounted) return;
 
+    // Stop listening on the queue row — we're either going to /match or back to idle
+    _channel?.unsubscribe();
+    _channel = null;
+    _pollTimer?.cancel();
+
     if (accepted == true) {
-      // Accepted — now wait for either all-accept (redirect to veto)
-      // or someone declining (back to search).
-      // Poll the match status for up to 20s.
-      _waitForMatchTransition(matchId);
+      // Dialog popped(true) means the match already transitioned to 'veto'
+      // (either via our own all-accepted response OR via realtime from another
+      // player's RPC). Redirect directly — no need to poll.
+      Log.d('AcceptDialog returned true — navigating to /match/$matchId');
+      setState(() => _queue = null);
+      context.go('/match/$matchId');
     } else {
-      // Declined (or closed by user)
-      await _repo.declineMatch(userId: _userId, matchId: matchId);
-      _showSnack('Match declined. 2 min penalty applied.', isError: true);
-    }
-  }
-
-  Future<void> _waitForMatchTransition(String matchId) async {
-    for (int i = 0; i < 30; i++) {
-      if (!mounted) return;
-      await Future.delayed(const Duration(seconds: 1));
-
+      // Declined, timed out, or cancelled (someone else declined).
+      // Check server state before calling decline — it might already be cancelled
+      // or veto'd (e.g. timeout race).
       try {
-        final data = await SupabaseConfig.client
+        final matchData = await SupabaseConfig.client
             .from('matches')
             .select('status')
             .eq('id', matchId)
             .single();
-        final status = data['status'] as String;
+        final status = matchData['status'] as String;
 
         if (status == 'veto') {
-          if (mounted) context.go('/match/$matchId');
+          // We technically missed the veto transition — probably timed out but
+          // others accepted in time. Go to match anyway.
+          Log.d('Match is already in veto — navigating');
+          setState(() => _queue = null);
+          // ignore: use_build_context_synchronously
+          context.go('/match/$matchId');
           return;
         }
-        if (status == 'cancelled') {
-          if (mounted) {
-            _showSnack('Match cancelled (someone declined).', isError: true);
-          }
-          return;
+
+        if (status == 'accept_pending') {
+          // We actually declined / timed out. Apply penalty.
+          await _repo.declineMatch(userId: _userId, matchId: matchId);
+          _showSnack('Match declined. 2 min penalty applied.', isError: true);
         }
-      } catch (_) {}
+        // If cancelled already → someone else declined, no action needed.
+      } catch (e) {
+        Log.e('Failed to check match status on decline', error: e);
+      }
+
+      setState(() => _queue = null);
     }
   }
 
@@ -265,8 +265,6 @@ class _PlayScreenState extends State<PlayScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 8),
-
-                // ── Title ─────────────────────────────
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -286,15 +284,12 @@ class _PlayScreenState extends State<PlayScreen> {
                   ),
                 ),
                 const SizedBox(height: 36),
-
-                // ── State machine ─────────────────────
                 if (_queue != null && _queue!.isSearching)
                   SearchingState(
                     queue: _queue!,
                     onCancel: _cancelSearch,
                   )
                 else if (_queue != null && _queue!.isMatched)
-                  // Accept dialog shown as overlay; fallback UI here
                   const _MatchFoundPlaceholder()
                 else
                   _buildSelectionUI(),
@@ -310,7 +305,6 @@ class _PlayScreenState extends State<PlayScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // ── Mode selector ────────────────────────
         Text('MODE',
             style: AppTextStyles.label.copyWith(
                 color: AppColors.textTertiary,
@@ -321,10 +315,7 @@ class _PlayScreenState extends State<PlayScreen> {
           selected: _mode,
           onChanged: (m) => setState(() => _mode = m),
         ),
-
         const SizedBox(height: 32),
-
-        // ── Entry fee selector ───────────────────
         Text('ENTRY FEE',
             style: AppTextStyles.label.copyWith(
                 color: AppColors.textTertiary,
@@ -335,10 +326,7 @@ class _PlayScreenState extends State<PlayScreen> {
           selected: _entryFee,
           onChanged: (f) => setState(() => _entryFee = f),
         ),
-
         const SizedBox(height: 32),
-
-        // ── Error ─────────────────────────────────
         if (_error != null) ...[
           Container(
             padding: const EdgeInsets.all(14),
@@ -363,8 +351,6 @@ class _PlayScreenState extends State<PlayScreen> {
           ),
           const SizedBox(height: 20),
         ],
-
-        // ── Find Match button ─────────────────────
         SizedBox(
           height: 56,
           child: AppButton(
@@ -379,8 +365,6 @@ class _PlayScreenState extends State<PlayScreen> {
   }
 }
 
-/// Placeholder shown briefly when queue status is 'matched' but
-/// accept dialog hasn't opened yet (race condition safety).
 class _MatchFoundPlaceholder extends StatelessWidget {
   const _MatchFoundPlaceholder();
 

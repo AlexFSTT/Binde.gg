@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../config/supabase_config.dart';
 import '../../core/theme/app_colors.dart';
+import '../../services/presence/presence_service.dart';
 import '../widgets/dock.dart';
 import '../widgets/status_bar.dart';
 
@@ -24,12 +25,22 @@ class _DockLayoutState extends State<DockLayout> {
       const Duration(minutes: 2),
       (_) => _sendHeartbeat(),
     );
+    _startPresence();
   }
 
   @override
   void dispose() {
     _heartbeat?.cancel();
+    PresenceService().stop();
     super.dispose();
+  }
+
+  /// Start presence tracking for the current user.
+  Future<void> _startPresence() async {
+    final userId = SupabaseConfig.auth.currentUser?.id;
+    if (userId != null) {
+      await PresenceService().start(userId);
+    }
   }
 
   /// Update last_online on the current user's profile.
@@ -59,7 +70,10 @@ class _DockLayoutState extends State<DockLayout> {
                 gradient: RadialGradient(
                   center: const Alignment(-0.3, -0.5),
                   radius: 1.2,
-                  colors: [AppColors.primary.withValues(alpha: 0.04), AppColors.bgBase],
+                  colors: [
+                    AppColors.primary.withValues(alpha: 0.04),
+                    AppColors.bgBase,
+                  ],
                 ),
               ),
             ),
@@ -70,7 +84,10 @@ class _DockLayoutState extends State<DockLayout> {
                 gradient: RadialGradient(
                   center: const Alignment(0.8, -0.8),
                   radius: 0.8,
-                  colors: [AppColors.accent.withValues(alpha: 0.02), Colors.transparent],
+                  colors: [
+                    AppColors.accent.withValues(alpha: 0.02),
+                    Colors.transparent,
+                  ],
                 ),
               ),
             ),

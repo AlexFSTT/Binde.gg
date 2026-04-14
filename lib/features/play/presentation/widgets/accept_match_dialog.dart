@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:binde_gg/core/errors/result.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../config/supabase_config.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
@@ -9,7 +10,14 @@ import '../../../../data/repositories/matchmaking_repository.dart';
 import '../../../../shared/widgets/app_button.dart';
 
 /// Accept-match dialog — 15s countdown with Accept/Decline.
-/// Returns `true` if accepted, `false` if declined (or auto-declined on timeout).
+///
+/// Returns:
+///   true  → accepted AND all players accepted (match went to veto)
+///   false → declined or timed out (penalty applied by caller)
+///
+/// Key behaviour: after the user clicks Accept, we keep the dialog open
+/// and listen on `matches` realtime for the transition to 'veto'. That's
+/// the signal that EVERYONE accepted — at which point we pop(true).
 class AcceptMatchDialog extends StatefulWidget {
   final String matchId;
   const AcceptMatchDialog({super.key, required this.matchId});
@@ -29,8 +37,11 @@ class _AcceptMatchDialogState extends State<AcceptMatchDialog>
   int _secondsLeft = 15;
   bool _isSubmitting = false;
   bool _hasAccepted = false;
-  int _acceptedCount = 1; // Assume self on accept
+  int _acceptedCount = 0;
   int _totalCount = 2;
+
+  // Realtime listener for the match row
+  RealtimeChannel? _matchChannel;
 
   String get _userId => SupabaseConfig.auth.currentUser!.id;
 
@@ -46,14 +57,48 @@ class _AcceptMatchDialogState extends State<AcceptMatchDialog>
         CurvedAnimation(parent: _bounceCtrl, curve: Curves.elasticOut);
     _bounceCtrl.forward();
 
+    _subscribeMatch();
     _startCountdown();
   }
 
   @override
   void dispose() {
     _countdown?.cancel();
+    _matchChannel?.unsubscribe();
     _bounceCtrl.dispose();
     super.dispose();
+  }
+
+  // ── Realtime subscription on the match row ─────────────
+  void _subscribeMatch() {
+    _matchChannel = SupabaseConfig.client
+        .channel('accept_dialog:${widget.matchId}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'matches',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: widget.matchId,
+          ),
+          callback: (payload) {
+            if (!mounted) return;
+            final newStatus = payload.newRecord['status'] as String?;
+            Log.d('AcceptDialog: match status → $newStatus');
+
+            if (newStatus == 'veto') {
+              // Everyone accepted. Close dialog with success.
+              _countdown?.cancel();
+              Navigator.of(context).pop(true);
+            } else if (newStatus == 'cancelled') {
+              // Someone declined. Close dialog with failure.
+              _countdown?.cancel();
+              Navigator.of(context).pop(false);
+            }
+          },
+        )
+        .subscribe();
   }
 
   void _startCountdown() {
@@ -68,9 +113,16 @@ class _AcceptMatchDialogState extends State<AcceptMatchDialog>
   }
 
   void _handleTimeout() {
-    // Auto-decline on timeout
     Log.d('AcceptDialog: timeout — treating as decline');
-    if (mounted) Navigator.of(context).pop(false);
+    // Only decline if we haven't already accepted.
+    // If we accepted and are waiting, the cron will handle expiry
+    // and trigger a cancelled status via realtime — but to be safe,
+    // pop with false only if not accepted.
+    if (!_hasAccepted && mounted) {
+      Navigator.of(context).pop(false);
+    }
+    // If accepted, we just stop the countdown and keep waiting on realtime.
+    // The accept_expires_at deadline on the server side will cancel if needed.
   }
 
   Future<void> _accept() async {
@@ -85,19 +137,20 @@ class _AcceptMatchDialogState extends State<AcceptMatchDialog>
     if (!mounted) return;
 
     if (result.isSuccess) {
+      final data = result.data!;
       setState(() {
         _hasAccepted = true;
         _isSubmitting = false;
-        _acceptedCount =
-            (result.data!['accepted_count'] as int?) ?? _acceptedCount;
-        _totalCount = (result.data!['total_count'] as int?) ?? _totalCount;
+        _acceptedCount = (data['accepted_count'] as int?) ?? 1;
+        _totalCount = (data['total_count'] as int?) ?? _totalCount;
       });
 
-      // If all accepted, close immediately
-      if (result.data!['all_accepted'] == true) {
-        if (mounted) Navigator.of(context).pop(true);
+      // If all accepted → close immediately.
+      // Otherwise → keep dialog open and let realtime signal the veto transition.
+      if (data['all_accepted'] == true) {
+        _countdown?.cancel();
+        Navigator.of(context).pop(true);
       }
-      // Otherwise stay open — we've accepted, wait for others
     } else {
       setState(() => _isSubmitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -126,10 +179,7 @@ class _AcceptMatchDialogState extends State<AcceptMatchDialog>
           padding: const EdgeInsets.all(32),
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [
-                AppColors.bgSurface,
-                AppColors.bgElevated,
-              ],
+              colors: [AppColors.bgSurface, AppColors.bgElevated],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
@@ -154,7 +204,6 @@ class _AcceptMatchDialogState extends State<AcceptMatchDialog>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // ── Icon ─────────────────────────────
               Container(
                 width: 72,
                 height: 72,
@@ -170,8 +219,6 @@ class _AcceptMatchDialogState extends State<AcceptMatchDialog>
                 ),
               ),
               const SizedBox(height: 20),
-
-              // ── Title ────────────────────────────
               Text('MATCH FOUND',
                   style: AppTextStyles.h2.copyWith(
                     color: AppColors.success,
@@ -179,7 +226,6 @@ class _AcceptMatchDialogState extends State<AcceptMatchDialog>
                     fontSize: 24,
                   )),
               const SizedBox(height: 8),
-
               if (_hasAccepted) ...[
                 Text(
                   'Waiting for other players...',
@@ -203,18 +249,12 @@ class _AcceptMatchDialogState extends State<AcceptMatchDialog>
                   textAlign: TextAlign.center,
                 ),
               ],
-
               const SizedBox(height: 24),
-
-              // ── Countdown ────────────────────────
               _CountdownBar(
-                seconds: _secondsLeft,
+                seconds: _secondsLeft.clamp(0, 15),
                 totalSeconds: 15,
               ),
-
               const SizedBox(height: 28),
-
-              // ── Buttons ──────────────────────────
               if (!_hasAccepted) ...[
                 Row(
                   children: [
@@ -250,7 +290,6 @@ class _AcceptMatchDialogState extends State<AcceptMatchDialog>
                       .copyWith(color: AppColors.textTertiary, fontSize: 10),
                 ),
               ] else ...[
-                // After acceptance, show loading
                 const SizedBox(
                   width: 28,
                   height: 28,
