@@ -132,6 +132,15 @@ class _StatusBarState extends State<StatusBar> {
     } catch (_) {}
   }
 
+  Future<void> _refreshUnread() async {
+    final userId = SupabaseConfig.auth.currentUser?.id;
+    if (userId == null) return;
+    final result = await _notifRepo.getUnreadCount(userId);
+    if (mounted && result.isSuccess) {
+      setState(() => _unreadNotifs = result.data!);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Align(
@@ -173,7 +182,7 @@ class _StatusBarState extends State<StatusBar> {
                     ),
                   ),
 
-// ── Presence pill (inserat aici) ────────────
+                  // ── Presence pill (inserat aici) ────────────
                   if (_presence != null) ...[
                     const SizedBox(width: 12),
                     PresencePill(
@@ -228,15 +237,7 @@ class _StatusBarState extends State<StatusBar> {
                   // Notifications bell
                   _NotificationBell(
                     unreadCount: _unreadNotifs,
-                    onRefresh: () async {
-                      final userId = SupabaseConfig.auth.currentUser?.id;
-                      if (userId != null) {
-                        final result = await _notifRepo.getUnreadCount(userId);
-                        if (mounted && result.isSuccess) {
-                          setState(() => _unreadNotifs = result.data!);
-                        }
-                      }
-                    },
+                    onRefresh: _refreshUnread,
                   ),
                 ],
               ),
@@ -414,7 +415,6 @@ class _NotificationBell extends StatefulWidget {
 }
 
 class _NotificationBellState extends State<_NotificationBell> {
-  final _notifRepo = NotificationRepository();
   OverlayEntry? _overlay;
   final _bellKey = GlobalKey();
 
@@ -433,13 +433,7 @@ class _NotificationBellState extends State<_NotificationBell> {
         anchorX: pos.dx + size.width / 2,
         anchorY: pos.dy + size.height + 8,
         onDismiss: _dismiss,
-        onMarkAllRead: () async {
-          final userId = SupabaseConfig.auth.currentUser?.id;
-          if (userId != null) {
-            await _notifRepo.markAllAsRead(userId);
-            widget.onRefresh();
-          }
-        },
+        onChanged: widget.onRefresh,
       ),
     );
     Overlay.of(context).insert(_overlay!);
@@ -510,12 +504,14 @@ class _NotificationBellState extends State<_NotificationBell> {
 
 class _NotifPanel extends StatefulWidget {
   final double anchorX, anchorY;
-  final VoidCallback onDismiss, onMarkAllRead;
-  const _NotifPanel(
-      {required this.anchorX,
-      required this.anchorY,
-      required this.onDismiss,
-      required this.onMarkAllRead});
+  final VoidCallback onDismiss;
+  final VoidCallback onChanged;
+  const _NotifPanel({
+    required this.anchorX,
+    required this.anchorY,
+    required this.onDismiss,
+    required this.onChanged,
+  });
   @override
   State<_NotifPanel> createState() => _NotifPanelState();
 }
@@ -524,6 +520,7 @@ class _NotifPanelState extends State<_NotifPanel> {
   final _repo = NotificationRepository();
   List<NotificationModel> _notifs = [];
   bool _loading = true;
+  bool _menuOpen = false;
 
   @override
   void initState() {
@@ -545,11 +542,60 @@ class _NotifPanelState extends State<_NotifPanel> {
     );
   }
 
+  Future<void> _markAllRead() async {
+    final userId = SupabaseConfig.auth.currentUser?.id;
+    if (userId == null) return;
+    await _repo.markAllAsRead(userId);
+    if (!mounted) return;
+    setState(() {
+      _notifs = _notifs
+          .map((n) => NotificationModel(
+                id: n.id,
+                userId: n.userId,
+                type: n.type,
+                title: n.title,
+                message: n.message,
+                data: n.data,
+                isRead: true,
+                createdAt: n.createdAt,
+              ))
+          .toList();
+    });
+    widget.onChanged();
+  }
+
+  Future<void> _clearRead() async {
+    final userId = SupabaseConfig.auth.currentUser?.id;
+    if (userId == null) return;
+    await _repo.clearRead(userId);
+    if (!mounted) return;
+    setState(() => _notifs = _notifs.where((n) => !n.isRead).toList());
+    widget.onChanged();
+  }
+
+  Future<void> _clearAll() async {
+    final userId = SupabaseConfig.auth.currentUser?.id;
+    if (userId == null) return;
+    await _repo.clearAll(userId);
+    if (!mounted) return;
+    setState(() => _notifs = []);
+    widget.onChanged();
+  }
+
+  Future<void> _deleteOne(NotificationModel n) async {
+    await _repo.deleteNotification(n.id);
+    if (!mounted) return;
+    setState(() => _notifs.removeWhere((x) => x.id == n.id));
+    widget.onChanged();
+  }
+
   @override
   Widget build(BuildContext context) {
     const w = 340.0;
     final left = (widget.anchorX - w / 2)
         .clamp(16.0, MediaQuery.of(context).size.width - w - 16);
+    final hasUnread = _notifs.any((n) => !n.isRead);
+    final hasRead = _notifs.any((n) => n.isRead);
 
     return Stack(children: [
       Positioned.fill(
@@ -575,95 +621,146 @@ class _NotifPanelState extends State<_NotifPanel> {
                         blurRadius: 20,
                         offset: const Offset(0, 8))
                   ]),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                // Header
-                Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
-                    child: Row(children: [
-                      const Icon(Icons.notifications_rounded,
-                          size: 16, color: AppColors.primary),
-                      const SizedBox(width: 8),
-                      Text('Notifications',
-                          style: AppTextStyles.label.copyWith(fontSize: 13)),
-                      const Spacer(),
-                      if (_notifs.any((n) => !n.isRead))
-                        TextButton(
-                          onPressed: () {
-                            widget.onMarkAllRead();
-                            setState(() => _notifs = _notifs
-                                .map((n) => NotificationModel(
-                                      id: n.id,
-                                      userId: n.userId,
-                                      type: n.type,
-                                      title: n.title,
-                                      message: n.message,
-                                      data: n.data,
-                                      isRead: true,
-                                      createdAt: n.createdAt,
-                                    ))
-                                .toList());
-                          },
-                          style: TextButton.styleFrom(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 8)),
-                          child: Text('Mark all read',
-                              style: AppTextStyles.caption.copyWith(
-                                  color: AppColors.primary,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600)),
-                        ),
-                    ])),
-                Container(
-                    height: 1, color: AppColors.border.withValues(alpha: 0.3)),
-
-                if (_loading)
-                  const Padding(
-                      padding: EdgeInsets.all(32),
-                      child: Center(
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: AppColors.primary)))
-                else if (_notifs.isEmpty)
+              child: Stack(clipBehavior: Clip.none, children: [
+                Column(mainAxisSize: MainAxisSize.min, children: [
+                  // ── Header ───────────────────────────────
                   Padding(
-                      padding: const EdgeInsets.all(32),
-                      child: Column(children: [
-                        Icon(Icons.notifications_off_rounded,
-                            size: 28,
-                            color:
-                                AppColors.textTertiary.withValues(alpha: 0.4)),
-                        const SizedBox(height: 8),
-                        Text('No notifications',
-                            style: AppTextStyles.bodySmall
-                                .copyWith(color: AppColors.textTertiary)),
-                      ]))
-                else
-                  Flexible(
-                      child: ListView.builder(
-                    shrinkWrap: true,
-                    padding: EdgeInsets.zero,
-                    itemCount: _notifs.length,
-                    itemBuilder: (context, i) => _NotifTile(
-                        notif: _notifs[i],
-                        onTap: () async {
-                          if (!_notifs[i].isRead) {
-                            await _repo.markAsRead(_notifs[i].id);
-                            widget.onMarkAllRead();
-                          }
-                          if (!context.mounted) return;
-                          widget.onDismiss();
-                          final data = _notifs[i].data;
-                          switch (_notifs[i].type) {
-                            case 'friend_request' || 'friend_accepted':
-                              context.go('/friends');
-                            case 'match_ready' || 'match_result':
-                              final matchId = data['match_id'] as String?;
-                              if (matchId != null) {
-                                context.go('/match/$matchId');
-                              }
-                            default:
-                              break;
-                          }
-                        }),
-                  )),
+                      padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+                      child: Row(children: [
+                        const Icon(Icons.notifications_rounded,
+                            size: 16, color: AppColors.primary),
+                        const SizedBox(width: 8),
+                        Text('Notifications',
+                            style: AppTextStyles.label.copyWith(fontSize: 13)),
+                        const Spacer(),
+                        if (hasUnread)
+                          TextButton(
+                            onPressed: _markAllRead,
+                            style: TextButton.styleFrom(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 8),
+                                minimumSize: const Size(0, 28),
+                                tapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap),
+                            child: Text('Mark all read',
+                                style: AppTextStyles.caption.copyWith(
+                                    color: AppColors.primary,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                        // Inline 3-dot toggle
+                        if (_notifs.isNotEmpty)
+                          IconButton(
+                            onPressed: () =>
+                                setState(() => _menuOpen = !_menuOpen),
+                            icon: Icon(Icons.more_horiz_rounded,
+                                size: 16,
+                                color: _menuOpen
+                                    ? AppColors.primary
+                                    : AppColors.textTertiary),
+                            tooltip: 'More',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                                minWidth: 28, minHeight: 28),
+                            splashRadius: 14,
+                          ),
+                      ])),
+                  Container(
+                      height: 1,
+                      color: AppColors.border.withValues(alpha: 0.3)),
+
+                  // ── Body ─────────────────────────────────
+                  if (_loading)
+                    const Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Center(
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: AppColors.primary)))
+                  else if (_notifs.isEmpty)
+                    Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Column(children: [
+                          Icon(Icons.notifications_off_rounded,
+                              size: 28,
+                              color: AppColors.textTertiary
+                                  .withValues(alpha: 0.4)),
+                          const SizedBox(height: 8),
+                          Text('No notifications',
+                              style: AppTextStyles.bodySmall
+                                  .copyWith(color: AppColors.textTertiary)),
+                        ]))
+                  else
+                    Flexible(
+                        child: ListView.builder(
+                      shrinkWrap: true,
+                      padding: EdgeInsets.zero,
+                      itemCount: _notifs.length,
+                      itemBuilder: (context, i) => _NotifTile(
+                          notif: _notifs[i],
+                          onDelete: () => _deleteOne(_notifs[i]),
+                          onTap: () async {
+                            if (!_notifs[i].isRead) {
+                              await _repo.markAsRead(_notifs[i].id);
+                              widget.onChanged();
+                            }
+                            if (!context.mounted) return;
+                            widget.onDismiss();
+                            final data = _notifs[i].data;
+                            switch (_notifs[i].type) {
+                              case 'friend_request' || 'friend_accepted':
+                                context.go('/friends');
+                              case 'match_ready' || 'match_result':
+                                final matchId = data['match_id'] as String?;
+                                if (matchId != null) {
+                                  context.go('/match/$matchId');
+                                }
+                              default:
+                                break;
+                            }
+                          }),
+                    )),
+                ]),
+
+                // ── Inline dropdown menu (inside panel) ──
+                if (_menuOpen && _notifs.isNotEmpty)
+                  Positioned(
+                    right: 10,
+                    top: 42,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.bgSurface,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.border),
+                        boxShadow: [
+                          BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.35),
+                              blurRadius: 16,
+                              offset: const Offset(0, 6)),
+                        ],
+                      ),
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        if (hasRead)
+                          _MenuRow(
+                            icon: Icons.done_all_rounded,
+                            label: 'Clear read',
+                            color: AppColors.textSecondary,
+                            onTap: () {
+                              setState(() => _menuOpen = false);
+                              _clearRead();
+                            },
+                          ),
+                        _MenuRow(
+                          icon: Icons.delete_sweep_rounded,
+                          label: 'Clear all',
+                          color: AppColors.danger,
+                          onTap: () {
+                            setState(() => _menuOpen = false);
+                            _clearAll();
+                          },
+                        ),
+                      ]),
+                    ),
+                  ),
               ]),
             ),
           )),
@@ -671,65 +768,155 @@ class _NotifPanelState extends State<_NotifPanel> {
   }
 }
 
-class _NotifTile extends StatelessWidget {
-  final NotificationModel notif;
+/// Simple row used inside the inline dropdown menu.
+class _MenuRow extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
   final VoidCallback onTap;
-  const _NotifTile({required this.notif, required this.onTap});
+  const _MenuRow({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  State<_MenuRow> createState() => _MenuRowState();
+}
+
+class _MenuRowState extends State<_MenuRow> {
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
-    final (icon, color) = _iconForType(notif.type);
-    return InkWell(
-        onTap: onTap,
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          width: 150,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
           decoration: BoxDecoration(
-              color: notif.isRead
-                  ? null
-                  : AppColors.primary.withValues(alpha: 0.03),
-              border: Border(
-                  bottom: BorderSide(
-                      color: AppColors.border.withValues(alpha: 0.2)))),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Container(
-                width: 6,
-                height: 6,
-                margin: const EdgeInsets.only(top: 5, right: 8),
-                decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color:
-                        notif.isRead ? Colors.transparent : AppColors.primary)),
-            Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(7)),
-                child: Icon(icon, size: 14, color: color)),
+            color: _hovered
+                ? widget.color.withValues(alpha: 0.08)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(children: [
+            Icon(widget.icon, size: 14, color: widget.color),
             const SizedBox(width: 10),
-            Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                  Text(notif.title,
-                      style: AppTextStyles.label.copyWith(
-                          fontSize: 11,
-                          color: notif.isRead
-                              ? AppColors.textSecondary
-                              : AppColors.textPrimary)),
-                  const SizedBox(height: 1),
-                  Text(notif.message,
-                      style: AppTextStyles.caption.copyWith(
-                          color: AppColors.textTertiary, fontSize: 10),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis),
-                ])),
-            const SizedBox(width: 8),
-            Text(_timeAgo(notif.createdAt),
-                style: AppTextStyles.caption
-                    .copyWith(color: AppColors.textTertiary, fontSize: 9)),
+            Text(widget.label,
+                style: AppTextStyles.bodySmall
+                    .copyWith(fontSize: 12, color: widget.color)),
           ]),
-        ));
+        ),
+      ),
+    );
+  }
+}
+
+class _NotifTile extends StatefulWidget {
+  final NotificationModel notif;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+  const _NotifTile({
+    required this.notif,
+    required this.onTap,
+    required this.onDelete,
+  });
+
+  @override
+  State<_NotifTile> createState() => _NotifTileState();
+}
+
+class _NotifTileState extends State<_NotifTile> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final notif = widget.notif;
+    final (icon, color) = _iconForType(notif.type);
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: InkWell(
+          onTap: widget.onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+                color: notif.isRead
+                    ? null
+                    : AppColors.primary.withValues(alpha: 0.03),
+                border: Border(
+                    bottom: BorderSide(
+                        color: AppColors.border.withValues(alpha: 0.2)))),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(
+                  width: 6,
+                  height: 6,
+                  margin: const EdgeInsets.only(top: 5, right: 8),
+                  decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: notif.isRead
+                          ? Colors.transparent
+                          : AppColors.primary)),
+              Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(7)),
+                  child: Icon(icon, size: 14, color: color)),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text(notif.title,
+                        style: AppTextStyles.label.copyWith(
+                            fontSize: 11,
+                            color: notif.isRead
+                                ? AppColors.textSecondary
+                                : AppColors.textPrimary)),
+                    const SizedBox(height: 1),
+                    Text(notif.message,
+                        style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textTertiary, fontSize: 10),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis),
+                  ])),
+              const SizedBox(width: 8),
+              // Delete button on hover, time-ago otherwise
+              SizedBox(
+                width: 32,
+                child: _hovered
+                    ? Align(
+                        alignment: Alignment.centerRight,
+                        child: IconButton(
+                          onPressed: widget.onDelete,
+                          icon: const Icon(Icons.close_rounded, size: 14),
+                          color: AppColors.textTertiary,
+                          hoverColor: AppColors.danger.withValues(alpha: 0.12),
+                          tooltip: 'Delete',
+                          padding: EdgeInsets.zero,
+                          constraints:
+                              const BoxConstraints(minWidth: 26, minHeight: 26),
+                          splashRadius: 14,
+                        ),
+                      )
+                    : Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(_timeAgo(notif.createdAt),
+                            style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textTertiary, fontSize: 9)),
+                      ),
+              ),
+            ]),
+          )),
+    );
   }
 
   (IconData, Color) _iconForType(String type) => switch (type) {
