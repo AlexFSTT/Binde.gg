@@ -49,7 +49,10 @@ class _CreateLobbyDialogState extends State<CreateLobbyDialog> {
     try {
       final userId = SupabaseConfig.auth.currentUser!.id;
       final profile = await SupabaseConfig.client
-          .from('profiles').select('bcoins').eq('id', userId).single();
+          .from('profiles')
+          .select('bcoins')
+          .eq('id', userId)
+          .single();
       if (mounted) setState(() => _userBcoins = profile['bcoins'] as int? ?? 0);
     } catch (_) {}
   }
@@ -76,20 +79,21 @@ class _CreateLobbyDialogState extends State<CreateLobbyDialog> {
     if (fee > _userBcoins) {
       setState(() {
         _isLoading = false;
-        _error = 'Insufficient Bcoins. You have $_userBcoins, need $fee to enter.';
+        _error =
+            'Insufficient Bcoins. You have $_userBcoins, need $fee to enter.';
       });
       return;
     }
 
-    final result = await _lobbyRepo.createLobby({
-      'created_by': userId,
-      'name': _nameCtrl.text.trim(),
-      'mode': _mode,
-      'entry_fee': fee.toDouble(), // store as Bcoin amount in existing column
-      'max_players': _maxPlayers,
-      'region': _region,
-      'is_private': _isPrivate,
-    });
+    final result = await _lobbyRepo.createLobby(
+      name: _nameCtrl.text.trim(),
+      mode: _mode,
+      region: _region,
+      entryFee: fee.toInt(),
+      maxPlayers: _maxPlayers,
+      isPrivate: _isPrivate,
+      // minElo, maxElo default la 0 și 15000
+    );
 
     if (!mounted) return;
 
@@ -104,7 +108,8 @@ class _CreateLobbyDialogState extends State<CreateLobbyDialog> {
     final lobby = result.data!;
 
     // Auto-join the creator (deducts fee via RPC)
-    final joinResult = await _lobbyRepo.joinLobby(lobby.id, userId, team: 'team_a');
+    final joinResult =
+        await _lobbyRepo.joinLobby(lobby.id, userId, team: 'team_a');
     if (!mounted) return;
 
     if (joinResult.isFailure) {
@@ -234,26 +239,37 @@ class _CreateLobbyDialogState extends State<CreateLobbyDialog> {
                     const Spacer(),
                     // User balance chip
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: AppColors.accent.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(5),
-                        border: Border.all(color: AppColors.accent.withValues(alpha: 0.2)),
+                        border: Border.all(
+                            color: AppColors.accent.withValues(alpha: 0.2)),
                       ),
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
                         Container(
-                          width: 14, height: 14,
+                          width: 14,
+                          height: 14,
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFE8A33E), Color(0xFFD4891F)]),
-                            borderRadius: BorderRadius.circular(3)),
-                          child: const Center(child: Text('B',
-                              style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900))),
+                              gradient: const LinearGradient(colors: [
+                                Color(0xFFE8A33E),
+                                Color(0xFFD4891F)
+                              ]),
+                              borderRadius: BorderRadius.circular(3)),
+                          child: const Center(
+                              child: Text('B',
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.w900))),
                         ),
                         const SizedBox(width: 5),
                         Text('Balance: $_userBcoins',
                             style: AppTextStyles.caption.copyWith(
-                                color: AppColors.accent, fontWeight: FontWeight.w700, fontSize: 10)),
+                                color: AppColors.accent,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 10)),
                       ]),
                     ),
                   ],
@@ -265,14 +281,18 @@ class _CreateLobbyDialogState extends State<CreateLobbyDialog> {
                   spacing: 6,
                   runSpacing: 6,
                   children: _feePresets.map((preset) {
-                    final isSelected = (int.tryParse(_feeCtrl.text) ?? 0) == preset;
+                    final isSelected =
+                        (int.tryParse(_feeCtrl.text) ?? 0) == preset;
                     final insufficient = preset > _userBcoins;
                     return GestureDetector(
-                      onTap: insufficient ? null : () {
-                        setState(() => _feeCtrl.text = '$preset');
-                      },
+                      onTap: insufficient
+                          ? null
+                          : () {
+                              setState(() => _feeCtrl.text = '$preset');
+                            },
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
                           color: isSelected
                               ? AppColors.accent.withValues(alpha: 0.15)
@@ -289,19 +309,24 @@ class _CreateLobbyDialogState extends State<CreateLobbyDialog> {
                         child: Row(mainAxisSize: MainAxisSize.min, children: [
                           Text(preset == 0 ? 'Free' : '$preset',
                               style: AppTextStyles.mono.copyWith(
-                                  fontSize: 12, fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
                                   color: isSelected
                                       ? AppColors.accent
                                       : insufficient
-                                          ? AppColors.textTertiary.withValues(alpha: 0.5)
+                                          ? AppColors.textTertiary
+                                              .withValues(alpha: 0.5)
                                           : AppColors.textSecondary)),
                           if (preset > 0) ...[
                             const SizedBox(width: 3),
-                            Text('B', style: AppTextStyles.caption.copyWith(
-                                fontSize: 9, fontWeight: FontWeight.w700,
-                                color: isSelected
-                                    ? AppColors.accent.withValues(alpha: 0.6)
-                                    : AppColors.textTertiary)),
+                            Text('B',
+                                style: AppTextStyles.caption.copyWith(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w700,
+                                    color: isSelected
+                                        ? AppColors.accent
+                                            .withValues(alpha: 0.6)
+                                        : AppColors.textTertiary)),
                           ],
                         ]),
                       ),
@@ -321,7 +346,8 @@ class _CreateLobbyDialogState extends State<CreateLobbyDialog> {
                         onChanged: (_) => setState(() {}),
                         decoration: const InputDecoration(
                           hintText: 'Custom amount',
-                          prefixIcon: Icon(Icons.edit_rounded, size: 16, color: AppColors.textTertiary),
+                          prefixIcon: Icon(Icons.edit_rounded,
+                              size: 16, color: AppColors.textTertiary),
                           suffixText: 'B',
                         ),
                         validator: (v) {
@@ -365,26 +391,40 @@ class _CreateLobbyDialogState extends State<CreateLobbyDialog> {
                   decoration: BoxDecoration(
                     color: AppColors.bgSurfaceActive,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+                    border: Border.all(
+                        color: AppColors.border.withValues(alpha: 0.5)),
                   ),
                   child: Column(children: [
-                    Text('$_mode · $_region · $_maxPlayers players · ${_isPrivate ? "Private" : "Public"}',
-                        style: AppTextStyles.bodySmall.copyWith(color: AppColors.textTertiary),
+                    Text(
+                        '$_mode · $_region · $_maxPlayers players · ${_isPrivate ? "Private" : "Public"}',
+                        style: AppTextStyles.bodySmall
+                            .copyWith(color: AppColors.textTertiary),
                         textAlign: TextAlign.center),
                     if (_potTotal > 0) ...[
                       const SizedBox(height: 6),
-                      Container(height: 1, color: AppColors.border.withValues(alpha: 0.3)),
+                      Container(
+                          height: 1,
+                          color: AppColors.border.withValues(alpha: 0.3)),
                       const SizedBox(height: 6),
-                      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                        Text('TOTAL POT: ', style: AppTextStyles.caption.copyWith(
-                            color: AppColors.textTertiary, letterSpacing: 0.8)),
-                        Text('$_potTotal', style: AppTextStyles.mono.copyWith(
-                            color: AppColors.accent, fontWeight: FontWeight.w800, fontSize: 14)),
-                        const SizedBox(width: 2),
-                        Text('B', style: AppTextStyles.caption.copyWith(
-                            color: AppColors.accent.withValues(alpha: 0.7),
-                            fontWeight: FontWeight.w700)),
-                      ]),
+                      Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text('TOTAL POT: ',
+                                style: AppTextStyles.caption.copyWith(
+                                    color: AppColors.textTertiary,
+                                    letterSpacing: 0.8)),
+                            Text('$_potTotal',
+                                style: AppTextStyles.mono.copyWith(
+                                    color: AppColors.accent,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 14)),
+                            const SizedBox(width: 2),
+                            Text('B',
+                                style: AppTextStyles.caption.copyWith(
+                                    color:
+                                        AppColors.accent.withValues(alpha: 0.7),
+                                    fontWeight: FontWeight.w700)),
+                          ]),
                     ],
                   ]),
                 ),

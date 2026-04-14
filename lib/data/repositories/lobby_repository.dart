@@ -3,6 +3,9 @@ import '../../core/errors/result.dart';
 import '../models/lobby_model.dart';
 
 /// Lobby CRUD and player management.
+///
+/// v2 (security hardening): createLobby and setReady now go through
+/// SECURITY DEFINER RPCs so clients cannot bypass validation.
 class LobbyRepository {
   final _client = SupabaseConfig.client;
 
@@ -21,10 +24,8 @@ class LobbyRepository {
   }
 
   /// Get lobbies where the user is currently an active participant.
-  /// Active = lobby status is 'open' or 'in_match'.
   Future<Result<List<LobbyModel>>> getMyActiveLobbies(String userId) async {
     try {
-      // First get lobby IDs where this user is a player
       final playerRows = await _client
           .from('lobby_players')
           .select('lobby_id')
@@ -32,16 +33,14 @@ class LobbyRepository {
 
       if (playerRows.isEmpty) return const Success([]);
 
-      final lobbyIds =
-          playerRows.map((r) => r['lobby_id'] as String).toList();
+      final lobbyIds = playerRows.map((r) => r['lobby_id'] as String).toList();
 
-      // Then get those lobbies that are active
       final data = await _client
           .from('lobbies')
           .select()
           .inFilter('id', lobbyIds)
-          .inFilter('status', ['open', 'in_match'])
-          .order('created_at', ascending: false);
+          .inFilter('status', ['open', 'in_match']).order('created_at',
+              ascending: false);
 
       return Success(data.map((j) => LobbyModel.fromJson(j)).toList());
     } catch (e) {
@@ -60,8 +59,7 @@ class LobbyRepository {
 
       if (playerRows.isEmpty) return const Success([]);
 
-      final lobbyIds =
-          playerRows.map((r) => r['lobby_id'] as String).toList();
+      final lobbyIds = playerRows.map((r) => r['lobby_id'] as String).toList();
 
       final data = await _client
           .from('lobbies')
@@ -78,7 +76,6 @@ class LobbyRepository {
   }
 
   /// Check if the user is currently in any active lobby.
-  /// Returns the lobby if found, null otherwise.
   Future<LobbyModel?> getActiveLobbyForUser(String userId) async {
     try {
       final playerRows = await _client
@@ -88,8 +85,7 @@ class LobbyRepository {
 
       if (playerRows.isEmpty) return null;
 
-      final lobbyIds =
-          playerRows.map((r) => r['lobby_id'] as String).toList();
+      final lobbyIds = playerRows.map((r) => r['lobby_id'] as String).toList();
 
       final data = await _client
           .from('lobbies')
@@ -107,7 +103,6 @@ class LobbyRepository {
   }
 
   /// Check if the user is in an ongoing match (live or ready_check).
-  /// Returns the match_id if found, null otherwise.
   Future<String?> getActiveMatchForUser(String userId) async {
     try {
       final row = await _client
@@ -122,7 +117,6 @@ class LobbyRepository {
       final match = row['match'] as Map<String, dynamic>?;
       return match?['id'] as String?;
     } catch (_) {
-      // Fallback: query separately if join fails
       try {
         final playerRows = await _client
             .from('match_players')
@@ -149,35 +143,6 @@ class LobbyRepository {
     }
   }
 
-  /// Pre-check: fails if user is in active lobby OR active match.
-  Future<String?> _checkUserLocked(String userId) async {
-    // Check Steam linked
-    try {
-      final profile = await _client
-          .from('profiles')
-          .select('steam_id')
-          .eq('id', userId)
-          .single();
-      if (profile['steam_id'] == null) {
-        return 'You must link your Steam account before playing. Go to Settings to connect Steam.';
-      }
-    } catch (_) {}
-
-    // Check active match first (higher priority)
-    final activeMatchId = await getActiveMatchForUser(userId);
-    if (activeMatchId != null) {
-      return 'You are in an ongoing match. Finish it before joining a lobby.';
-    }
-
-    // Check active lobby
-    final activeLobby = await getActiveLobbyForUser(userId);
-    if (activeLobby != null) {
-      return 'You are already in an active lobby ("${activeLobby.name}"). Leave it first.';
-    }
-
-    return null; // Not locked
-  }
-
   Future<Result<LobbyModel>> getLobby(String lobbyId) async {
     try {
       final data =
@@ -188,29 +153,89 @@ class LobbyRepository {
     }
   }
 
-  /// Create a lobby — fails if user is in active lobby or match.
-  Future<Result<LobbyModel>> createLobby(Map<String, dynamic> lobbyData) async {
+  /// Create a lobby via fn_create_lobby RPC.
+  /// Server validates everything: name length, mode, region, entry fee,
+  /// elo range, Steam linked, not VAC banned, not already in active lobby/match.
+  Future<Result<LobbyModel>> createLobby({
+    required String name,
+    required String mode,
+    required String region,
+    required int entryFee,
+    required int maxPlayers,
+    bool isPrivate = false,
+    int minElo = 0,
+    int maxElo = 15000,
+  }) async {
     try {
-      final userId = SupabaseConfig.auth.currentUser?.id;
-      if (userId != null) {
-        final lockMsg = await _checkUserLocked(userId);
-        if (lockMsg != null) return Failure(lockMsg);
+      final result = await _client.rpc('fn_create_lobby', params: {
+        'p_name': name,
+        'p_mode': mode,
+        'p_region': region,
+        'p_entry_fee': entryFee,
+        'p_max_players': maxPlayers,
+        'p_is_private': isPrivate,
+        'p_min_elo': minElo,
+        'p_max_elo': maxElo,
+      });
+
+      final data = result as Map<String, dynamic>;
+      if (data['success'] != true) {
+        return Failure(_translateCreateError(data));
       }
 
-      final data =
-          await _client.from('lobbies').insert(lobbyData).select().single();
-      return Success(LobbyModel.fromJson(data));
+      final lobbyId = data['lobby_id'] as String;
+      final lobbyData =
+          await _client.from('lobbies').select().eq('id', lobbyId).single();
+      return Success(LobbyModel.fromJson(lobbyData));
     } catch (e) {
       return Failure(e.toString());
     }
   }
 
-  /// Join a lobby — atomically deducts Bcoins if paid.
-  /// Uses RPC `fn_join_paid_lobby` for atomicity.
+  String _translateCreateError(Map<String, dynamic> data) {
+    final err = data['error'] as String?;
+    switch (err) {
+      case 'UNAUTHORIZED':
+        return 'Please log in to create a lobby.';
+      case 'INVALID_NAME':
+        return 'Lobby name must be 3–50 characters.';
+      case 'INVALID_MODE':
+        return 'Invalid match mode.';
+      case 'INVALID_REGION':
+        return 'Invalid region.';
+      case 'INVALID_ENTRY_FEE':
+        return 'Invalid entry fee. Must be 0–10000 Bcoins.';
+      case 'INVALID_MAX_PLAYERS':
+        return 'Invalid player count.';
+      case 'MODE_PLAYER_MISMATCH':
+        return 'Player count does not match the selected mode.';
+      case 'INVALID_ELO_RANGE':
+        return 'Invalid ELO range.';
+      case 'STEAM_REQUIRED':
+        return 'Link your Steam account to create lobbies.';
+      case 'VAC_BANNED':
+        return 'VAC-banned accounts cannot create lobbies.';
+      case 'ACCOUNT_BANNED':
+        return 'Your account is currently banned.';
+      case 'INSUFFICIENT_BCOINS':
+        final balance = data['balance'];
+        final required = data['required'];
+        return 'Not enough Bcoins. You have $balance, need $required.';
+      case 'IN_ACTIVE_LOBBY':
+        return 'You are already in an active lobby.';
+      case 'IN_ACTIVE_MATCH':
+        return 'You are already in an active match.';
+      case 'PROFILE_NOT_FOUND':
+        return 'Profile not found.';
+      default:
+        return err ?? 'Failed to create lobby.';
+    }
+  }
+
+  /// Join a lobby — atomically deducts Bcoins via fn_join_paid_lobby RPC.
   Future<Result<void>> joinLobby(String lobbyId, String playerId,
       {String? team}) async {
     try {
-      // Check if already in THIS lobby (idempotent)
       final existing = await _client
           .from('lobby_players')
           .select('id')
@@ -218,11 +243,8 @@ class LobbyRepository {
           .eq('player_id', playerId)
           .maybeSingle();
 
-      if (existing != null) {
-        return const Success(null);
-      }
+      if (existing != null) return const Success(null);
 
-      // Check lock (another active match/lobby)
       final activeMatchId = await getActiveMatchForUser(playerId);
       if (activeMatchId != null) {
         return const Failure(
@@ -235,7 +257,6 @@ class LobbyRepository {
             'You are already in an active lobby ("${activeLobby.name}"). Leave it first before joining another.');
       }
 
-      // Call RPC — handles fee deduction + team assignment + insert atomically
       final result = await _client.rpc('fn_join_paid_lobby', params: {
         'p_lobby_id': lobbyId,
         'p_player_id': playerId,
@@ -243,16 +264,14 @@ class LobbyRepository {
       });
 
       final data = result as Map<String, dynamic>;
-      if (data['success'] == true) {
-        return const Success(null);
-      }
+      if (data['success'] == true) return const Success(null);
 
-      // Handle errors
       final err = data['error'] as String?;
       if (err == 'INSUFFICIENT_BCOINS') {
         final balance = data['balance'];
         final required = data['required'];
-        return Failure('Insufficient Bcoins. You have $balance B, need $required B to join.');
+        return Failure(
+            'Insufficient Bcoins. You have $balance B, need $required B to join.');
       }
       if (err == 'LOBBY_NOT_OPEN') {
         return const Failure('This lobby is no longer open.');
@@ -262,15 +281,12 @@ class LobbyRepository {
       }
       return Failure(err ?? 'Failed to join lobby');
     } catch (e) {
-      if (e.toString().contains('23505')) {
-        return const Success(null);
-      }
+      if (e.toString().contains('23505')) return const Success(null);
       return Failure(e.toString());
     }
   }
 
-  /// Leave a lobby — atomically refunds Bcoins if paid and match not started.
-  /// Uses RPC `fn_leave_paid_lobby` for atomicity.
+  /// Leave a lobby — atomically refunds Bcoins via fn_leave_paid_lobby RPC.
   Future<Result<void>> leaveLobby(String lobbyId, String playerId) async {
     try {
       final result = await _client.rpc('fn_leave_paid_lobby', params: {
@@ -279,9 +295,7 @@ class LobbyRepository {
       });
 
       final data = result as Map<String, dynamic>;
-      if (data['success'] == true) {
-        return const Success(null);
-      }
+      if (data['success'] == true) return const Success(null);
 
       final err = data['error'] as String?;
       if (err == 'MATCH_ALREADY_STARTED') {
@@ -293,15 +307,30 @@ class LobbyRepository {
     }
   }
 
+  /// Set ready state via fn_set_ready RPC.
+  /// Server validates that lobby is 'open' and user is in it.
   Future<Result<void>> setReady(
       String lobbyId, String playerId, bool ready) async {
     try {
-      await _client
-          .from('lobby_players')
-          .update({'is_ready': ready})
-          .eq('lobby_id', lobbyId)
-          .eq('player_id', playerId);
-      return const Success(null);
+      final result = await _client.rpc('fn_set_ready', params: {
+        'p_lobby_id': lobbyId,
+        'p_ready': ready,
+      });
+
+      final data = result as Map<String, dynamic>;
+      if (data['success'] == true) return const Success(null);
+
+      final err = data['error'] as String?;
+      switch (err) {
+        case 'LOBBY_NOT_FOUND':
+          return const Failure('Lobby not found.');
+        case 'LOBBY_NOT_OPEN':
+          return const Failure('Lobby is no longer open.');
+        case 'NOT_IN_LOBBY':
+          return const Failure('You are not in this lobby.');
+        default:
+          return Failure(err ?? 'Failed to toggle ready.');
+      }
     } catch (e) {
       return Failure(e.toString());
     }

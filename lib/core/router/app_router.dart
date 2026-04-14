@@ -31,28 +31,77 @@ class AppRouter {
     navigatorKey: _rootNavigatorKey,
     initialLocation: Routes.splash,
     routes: [
-      GoRoute(path: Routes.splash, builder: (context, state) => const SplashScreen()),
-      GoRoute(path: Routes.login, builder: (context, state) => const LoginScreen()),
-      GoRoute(path: Routes.register, builder: (context, state) => const RegisterScreen()),
-
+      GoRoute(
+          path: Routes.splash,
+          builder: (context, state) => const SplashScreen()),
+      GoRoute(
+          path: Routes.login, builder: (context, state) => const LoginScreen()),
+      GoRoute(
+          path: Routes.register,
+          builder: (context, state) => const RegisterScreen()),
       ShellRoute(
         navigatorKey: _shellNavigatorKey,
         builder: (context, state, child) => DockLayout(child: child),
         routes: [
-          GoRoute(path: Routes.dashboard, pageBuilder: (c, s) => DockPageTransition(key: s.pageKey, child: const DashboardScreen())),
-          GoRoute(path: Routes.lobbies, pageBuilder: (c, s) => DockPageTransition(key: s.pageKey, child: const LobbyBrowserScreen())),
-          GoRoute(path: Routes.lobbyDetail, pageBuilder: (c, s) => DockPageTransition(key: s.pageKey, child: LobbyDetailScreen(lobbyId: s.pathParameters['id']!))),
-          GoRoute(path: Routes.play, pageBuilder: (c, s) => DockPageTransition(key: s.pageKey, child: const PlayScreen())),
-          GoRoute(path: Routes.matchDetail, pageBuilder: (c, s) => DockPageTransition(key: s.pageKey, child: MatchScreen(matchId: s.pathParameters['id']!))),
-          GoRoute(path: Routes.leaderboard, pageBuilder: (c, s) => DockPageTransition(key: s.pageKey, child: const LeaderboardScreen())),
-          GoRoute(path: Routes.subscription, pageBuilder: (c, s) => DockPageTransition(key: s.pageKey, child: const SubscriptionScreen())),
-          GoRoute(path: Routes.teams, pageBuilder: (c, s) => DockPageTransition(key: s.pageKey, child: const TeamsScreen())),
-          GoRoute(path: Routes.profile, pageBuilder: (c, s) => DockPageTransition(key: s.pageKey, child: ProfileScreen(userId: s.pathParameters['id']!))),
-          GoRoute(path: Routes.myProfile, pageBuilder: (c, s) => DockPageTransition(key: s.pageKey, child: const ProfileScreen())),
-          GoRoute(path: Routes.wallet, pageBuilder: (c, s) => DockPageTransition(key: s.pageKey, child: const WalletScreen())),
-          GoRoute(path: Routes.shop, pageBuilder: (c, s) => DockPageTransition(key: s.pageKey, child: const ShopScreen())),
-          GoRoute(path: Routes.friends, pageBuilder: (c, s) => DockPageTransition(key: s.pageKey, child: const FriendsScreen())),
-          GoRoute(path: Routes.settings, pageBuilder: (c, s) => DockPageTransition(key: s.pageKey, child: const SettingsScreen())),
+          GoRoute(
+              path: Routes.dashboard,
+              pageBuilder: (c, s) => DockPageTransition(
+                  key: s.pageKey, child: const DashboardScreen())),
+          GoRoute(
+              path: Routes.lobbies,
+              pageBuilder: (c, s) => DockPageTransition(
+                  key: s.pageKey, child: const LobbyBrowserScreen())),
+          GoRoute(
+              path: Routes.lobbyDetail,
+              pageBuilder: (c, s) => DockPageTransition(
+                  key: s.pageKey,
+                  child: LobbyDetailScreen(lobbyId: s.pathParameters['id']!))),
+          GoRoute(
+              path: Routes.play,
+              pageBuilder: (c, s) => DockPageTransition(
+                  key: s.pageKey, child: const PlayScreen())),
+          GoRoute(
+              path: Routes.matchDetail,
+              pageBuilder: (c, s) => DockPageTransition(
+                  key: s.pageKey,
+                  child: MatchScreen(matchId: s.pathParameters['id']!))),
+          GoRoute(
+              path: Routes.leaderboard,
+              pageBuilder: (c, s) => DockPageTransition(
+                  key: s.pageKey, child: const LeaderboardScreen())),
+          GoRoute(
+              path: Routes.subscription,
+              pageBuilder: (c, s) => DockPageTransition(
+                  key: s.pageKey, child: const SubscriptionScreen())),
+          GoRoute(
+              path: Routes.teams,
+              pageBuilder: (c, s) => DockPageTransition(
+                  key: s.pageKey, child: const TeamsScreen())),
+          GoRoute(
+              path: Routes.profile,
+              pageBuilder: (c, s) => DockPageTransition(
+                  key: s.pageKey,
+                  child: ProfileScreen(userId: s.pathParameters['id']!))),
+          GoRoute(
+              path: Routes.myProfile,
+              pageBuilder: (c, s) => DockPageTransition(
+                  key: s.pageKey, child: const ProfileScreen())),
+          GoRoute(
+              path: Routes.wallet,
+              pageBuilder: (c, s) => DockPageTransition(
+                  key: s.pageKey, child: const WalletScreen())),
+          GoRoute(
+              path: Routes.shop,
+              pageBuilder: (c, s) => DockPageTransition(
+                  key: s.pageKey, child: const ShopScreen())),
+          GoRoute(
+              path: Routes.friends,
+              pageBuilder: (c, s) => DockPageTransition(
+                  key: s.pageKey, child: const FriendsScreen())),
+          GoRoute(
+              path: Routes.settings,
+              pageBuilder: (c, s) => DockPageTransition(
+                  key: s.pageKey, child: const SettingsScreen())),
         ],
       ),
     ],

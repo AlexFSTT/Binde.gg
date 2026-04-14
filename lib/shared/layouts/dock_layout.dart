@@ -49,10 +49,7 @@ class _DockLayoutState extends State<DockLayout> {
       final userId = SupabaseConfig.auth.currentUser?.id;
       if (userId == null) return;
 
-      await SupabaseConfig.client
-          .from('profiles')
-          .update({'last_online': DateTime.now().toUtc().toIso8601String()})
-          .eq('id', userId);
+      await SupabaseConfig.client.rpc('fn_heartbeat');
     } catch (_) {
       // Silent fail — non-critical
     }
@@ -92,21 +89,18 @@ class _DockLayoutState extends State<DockLayout> {
               ),
             ),
           ),
-
           Positioned.fill(
             child: Padding(
               padding: const EdgeInsets.only(top: 44, bottom: 90),
               child: widget.child,
             ),
           ),
-
           const Positioned(
             left: 0,
             right: 0,
             top: 0,
             child: StatusBar(),
           ),
-
           const Positioned(
             left: 0,
             right: 0,

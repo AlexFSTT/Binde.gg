@@ -293,9 +293,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _isSteamLinking = true);
     try {
       final token = _generateLinkToken();
-      await SupabaseConfig.client
-          .from('profiles')
-          .update({'steam_link_token': token}).eq('id', _userId);
+      await SupabaseConfig.client.rpc('fn_set_steam_link_token', params: {
+        'p_token': token,
+      });
       final steamAuthUrl = Uri.parse(
           '${SupabaseConfig.client.rest.url.replaceAll('/rest/v1', '')}/functions/v1/steam-auth?token=$token');
       if (await canLaunchUrl(steamAuthUrl)) {
